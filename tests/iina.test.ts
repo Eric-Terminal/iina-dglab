@@ -48,9 +48,13 @@ test('全局入口切换普通播放窗口时定向停用旧音源，不使用 n
   const code = buildSync({ entryPoints: ['src/global.ts'], bundle: true, write: false, format: 'iife' }).outputFiles[0].text;
   const handlers: Record<string, Function> = {};
   const sent: unknown[][] = [];
+  const windowHandlers: Record<string, Function> = {};
+  const windowMessages: { name: string; data: any }[] = [];
   vm.runInNewContext(code, { setInterval() {}, iina: {
     global: { onMessage: (name: string, fn: Function) => { handlers[name] = fn; }, postMessage: (...args: unknown[]) => sent.push(args) },
-    standaloneWindow: { loadFile() {}, setProperty() {}, setFrame() {}, onMessage() {}, postMessage() {}, open() {}, isOpen: () => true },
+    standaloneWindow: { loadFile() {}, setProperty() {}, setFrame() {},
+      onMessage: (name: string, fn: Function) => { windowHandlers[name] = fn; },
+      postMessage: (name: string, data: any) => windowMessages.push({ name, data }), open() {}, isOpen: () => true },
     menu: { item() {}, addItem() {} }, preferences: { get() {} }, console: { warn() {} },
   } });
   handlers['select-source']({ title: '第一个窗口' }, 'player-1');
@@ -59,4 +63,6 @@ test('全局入口切换普通播放窗口时定向停用旧音源，不使用 n
   assert.equal(sent[0][0], 'player-1');
   assert.equal(sent[0][1], 'capture');
   assert.equal((sent[0][2] as any).enabled, false);
+  windowHandlers.ready();
+  assert.equal(windowMessages.find(message => message.name === 'init')!.data.connectionMode, 'remote');
 });

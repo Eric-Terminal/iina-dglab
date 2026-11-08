@@ -34,7 +34,11 @@ test('本机中继与官方 SDK 完成配对、设备快照和指令往返，断
   try {
     assert.equal((relay.server.address() as any).address, '127.0.0.1');
     const { targetId } = await sdk.connect();
-    app = peer(`${relay.info.url}&tid=${targetId}`);
+    // 模拟 App 规范化地址：添加尾斜杠，查询部分只保留官方约定的 tid。
+    const appUrl = new URL(relay.info.url);
+    appUrl.pathname += '/';
+    appUrl.search = `?tid=${targetId}`;
+    app = peer(appUrl.toString());
     const hello = await app.next('hello');
     assert.equal((await app.next('controller_attached')).clientId, targetId);
     const devices = new Promise<void>(resolve => sdk.on('devices', () => resolve()));
@@ -70,17 +74,17 @@ test('本机中继拒绝错误密钥、配对目标和第二个控制端，隔�
   const relay = await createLocalRelay();
   const clients: WebSocket[] = [];
   try {
-    const bad = new WebSocket(relay.info.url.replace(/key=.*/, 'key=wrong'));
+    const bad = new WebSocket(relay.info.url.replace(/\/v4\/[^/]+$/, '/v4/wrong'));
     clients.push(bad);
     assert.match(String((await once(bad, 'error'))[0]), /403/);
     assert.equal((await fetch(relay.info.leaseUrl.replace(/key=.*/, 'key=wrong'), { method: 'POST' })).status, 403);
     const controller = peer(relay.info.url); clients.push(controller.socket);
     const { clientId } = await controller.next('hello');
-    const wrong = peer(`${relay.info.url}&tid=missing`); clients.push(wrong.socket);
+    const wrong = peer(`${relay.info.url}?tid=missing`); clients.push(wrong.socket);
     assert.equal((await wrong.next('error')).code, 'controller_not_found');
     const second = peer(relay.info.url); clients.push(second.socket);
     assert.equal((await second.next('error')).code, 'controller_already_connected');
-    const app = peer(`${relay.info.url}&tid=${clientId}`); clients.push(app.socket);
+    const app = peer(`${relay.info.url}?tid=${clientId}`); clients.push(app.socket);
     await app.next('controller_attached');
     const appId = (await app.next('hello')).clientId;
     controller.socket.send(JSON.stringify({ type: 'message', clientId: 'missing', data: {} }));
@@ -124,7 +128,7 @@ test('打包启动器在最小环境中返回地址并退出，中继仍可连�
 });
 
 test('IINA 本地进程管理器复用连接、续租、停止并处理启动取消', async () => {
-  const info = { url: 'ws://127.0.0.1:12345/v4?key=abcdef', leaseUrl: 'http://127.0.0.1:12345/lease?key=abcdef', shutdownUrl: 'http://127.0.0.1:12345/shutdown?key=abcdef' };
+  const info = { url: 'ws://127.0.0.1:12345/v4/abcdef', leaseUrl: 'http://127.0.0.1:12345/lease?key=abcdef', shutdownUrl: 'http://127.0.0.1:12345/shutdown?key=abcdef' };
   const requests: string[] = [];
   let execs = 0;
   let finish: (() => void) | undefined;

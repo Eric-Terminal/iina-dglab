@@ -16,7 +16,7 @@ try {
 } catch { log.warn('已忽略无效的已保存参数。'); }
 const savedServer = preferences.get('server');
 let server = typeof savedServer === 'string' ? savedServer : OFFICIAL_SERVER;
-let connectionMode = preferences.get('connectionMode') === 'remote' ? 'remote' : 'local';
+let connectionMode = preferences.get('connectionMode') === 'local' ? 'local' : 'remote';
 let nodePath = String(preferences.get('nodePath') || '');
 const relay = new LocalRelay(iina);
 let relayGeneration = 0;
@@ -63,7 +63,7 @@ window.onMessage('save', (data: { settings: unknown; server: string; connectionM
     server = data.server;
     preferences.set('settings', settings);
     preferences.set('server', server);
-    connectionMode = data.connectionMode === 'remote' ? 'remote' : 'local';
+    connectionMode = data.connectionMode === 'local' ? 'local' : 'remote';
     nodePath = data.nodePath.trim();
     preferences.set('connectionMode', connectionMode);
     preferences.set('nodePath', nodePath);

@@ -58,9 +58,12 @@ export class AudioController {
 
   configure(settings: Settings): void {
     const valid = validateSettings(settings);
-    void this.stop('参数已应用，请重新开始联动');
+    const keepArmed = this.armed;
     this.settings = valid;
     this.mapper.reset();
+    this.wave = null;
+    // 保留用户的联动开关，先清理旧任务；清理完成前 busy 会阻止新参数输出。
+    void this.silence(keepArmed ? '参数已应用，继续联动' : '参数已应用', !keepArmed);
     this.changed();
   }
 
@@ -97,8 +100,12 @@ export class AudioController {
     return result;
   }
 
+  private hasRecentSample(): boolean {
+    return !!this.sample && this.now() - this.sample.at >= 0 && this.now() - this.sample.at <= STALE_MS;
+  }
+
   private isFresh(): boolean {
-    return !!this.sample?.running && this.now() - this.sample.at >= 0 && this.now() - this.sample.at <= STALE_MS;
+    return !!this.sample?.running && this.hasRecentSample();
   }
 
   accept(sample: AudioSample): void {
@@ -140,7 +147,8 @@ export class AudioController {
   }
 
   watchdog(): void {
-    if (this.armed && !this.isFresh()) void this.stop('音频采样超时，请重新开始联动');
+    // 暂停、静音和跳转仍有采样心跳；只有消息本身过期才需要手动重新开始。
+    if (this.armed && !this.hasRecentSample()) void this.stop('音频采样超时，请重新开始联动');
   }
 
   stop(reason = '已停止联动'): Promise<void> {

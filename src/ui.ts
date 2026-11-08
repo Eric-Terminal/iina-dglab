@@ -200,9 +200,9 @@ function render(): void {
   $('remote-settings').hidden = local;
   $('connection-hint').textContent = local ? '连接后，将 Socket 地址粘贴到同一台 Mac 的官方 App。' : '连接后，用官方 App 的 Socket 控制扫码或粘贴地址配对。';
   $('dirty').textContent = dirty ? '修改尚未应用' : '参数已应用';
-  $('status').textContent = controller.reason;
+  $('status').textContent = controller.reason + (dirty ? ' · 参数尚未应用，请先点「应用参数」。' : '');
   $<HTMLButtonElement>('start').disabled = controller.armed || controller.starting || connecting || disconnecting || !controller.target || !hasSource || !supportsWindowTracking || dirty;
-  $('start').textContent = controller.armed ? '联动已开启' : controller.starting ? '正在准备…' : '开始联动';
+  $('start').textContent = controller.armed ? '联动已开启' : controller.starting ? '正在准备…' : dirty ? '请先应用参数' : '开始联动';
   const sample = controller.sample;
   const number = (n: number | null | undefined, digits = 1) => typeof n === 'number' && Number.isFinite(n) ? Math.max(-99, n).toFixed(digits) : '—';
   $('rms').textContent = number(sample?.rmsDb);
@@ -269,7 +269,7 @@ if (bridge) {
     if (!dirty && !controller.armed) { controller.configure(data.settings); populate(data.settings); }
     if (!connecting && !['paired', 'waiting_for_peer'].includes(socketState)) {
       serverInput.value = data.server;
-      modeInput.value = data.connectionMode === 'remote' ? 'remote' : 'local';
+      modeInput.value = data.connectionMode === 'local' ? 'local' : 'remote';
       nodeInput.value = data.nodePath || '';
     }
     hasSource = data.hasSource;

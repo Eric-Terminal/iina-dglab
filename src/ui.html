@@ -13,15 +13,15 @@
       <span class="badge" id="connection-state">未连接</span>
     </header>
     <section class="panel connection">
-      <div class="row"><div><h2>连接郊狼</h2><p id="connection-hint">连接后，将 Socket 地址粘贴到同一台 Mac 的官方 App。</p></div><button id="connect" class="secondary">连接 App</button></div>
+      <div class="row"><div><h2>连接郊狼</h2><p id="connection-hint">连接后，用官方 App 的 Socket 控制扫码或粘贴地址配对。</p></div><button id="connect" class="secondary">连接 App</button></div>
       <details id="pairing" hidden>
         <summary id="pairing-title">连接地址</summary>
         <div class="pair-grid" id="pair-grid"><canvas id="qr" aria-label="App 配对二维码" hidden></canvas><div><p>DG-LAB 4 → Socket 控制 → 连接服务器</p><p id="pairing-hint">复制下方地址到同一台 Mac 的 App。</p><label for="pair-url">Socket 地址</label><div class="copy-row"><input id="pair-url" readonly><button id="copy">复制</button></div></div></div>
       </details>
-      <label for="connection-mode">连接方式</label><select id="connection-mode"><option value="local">本机中继 · 同一台 Mac</option><option value="remote">远程服务器 · 手机或其他设备</option></select>
+      <label for="connection-mode">连接方式</label><select id="connection-mode"><option value="remote">远程服务器 · 官方或自建</option><option value="local">本机中继 · 同一台 Mac</option></select>
       <details class="server-details"><summary>连接设置</summary>
-        <div id="local-settings"><p>自动启动本机中继，需要 Node.js 22+。仅接受这台 Mac 的连接。</p><label for="node-path">Node.js 路径（留空自动查找）</label><input id="node-path" placeholder="/opt/homebrew/bin/node" spellcheck="false"></div>
-        <div id="remote-settings" hidden><label for="server">V4 WebSocket 地址</label><input id="server" type="url" spellcheck="false" value="wss://trex.dungeon-lab.cn/v4"><p>可使用官方中继或填写自建 V4 服务地址。</p></div>
+        <div id="local-settings" hidden><p>自动启动本机中继，需要 Node.js 22+。仅接受这台 Mac 的连接。</p><label for="node-path">Node.js 路径（留空自动查找）</label><input id="node-path" placeholder="/opt/homebrew/bin/node" spellcheck="false"></div>
+        <div id="remote-settings"><label for="server">V4 WebSocket 地址</label><input id="server" type="url" spellcheck="false" value="wss://trex.dungeon-lab.cn/v4"><p>默认使用官方中继，也可填写自建 V4 服务地址。</p></div>
       </details>
       <label for="device">输出设备</label><select id="device"><option value="">等待 App 连接</option></select>
     </section>

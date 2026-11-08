@@ -9,6 +9,8 @@ export interface RelayInfo { url: string; leaseUrl: string; shutdownUrl: string 
 /** 只绑定回环地址，每次启动使用新密钥；不接受局域网或未持有连接地址的请求。 */
 export async function createLocalRelay(options: { leaseMs?: number; startupMs?: number; onClose?: () => void } = {}) {
   const secret = randomBytes(24).toString('hex');
+  // App 的 V4 配对只约定 tid 查询参数；路径携带密钥，避免额外查询参数被规范化丢弃。
+  const socketPath = `/v4/${secret}`;
   const peers = new Map<WebSocket, Peer>();
   let controller: Peer | undefined;
   let closing = false;
@@ -56,7 +58,7 @@ export async function createLocalRelay(options: { leaseMs?: number; startupMs?: 
 
   server.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url || '/', 'http://127.0.0.1');
-    if (url.pathname !== '/v4' || url.searchParams.get('key') !== secret || closing) {
+    if (url.pathname.replace(/\/$/, '') !== socketPath || closing) {
       socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); socket.destroy(); return;
     }
     const target = url.searchParams.get('tid');
@@ -129,7 +131,7 @@ export async function createLocalRelay(options: { leaseMs?: number; startupMs?: 
   if (!address || typeof address === 'string') throw new Error('无法读取本地中继端口。');
   const host = `127.0.0.1:${address.port}`;
   const info: RelayInfo = {
-    url: `ws://${host}/v4?key=${secret}`,
+    url: `ws://${host}${socketPath}`,
     leaseUrl: `http://${host}/lease?key=${secret}`,
     shutdownUrl: `http://${host}/shutdown?key=${secret}`,
   };

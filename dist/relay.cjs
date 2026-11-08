@@ -3746,6 +3746,7 @@ var import_websocket_server = __toESM(require_websocket_server(), 1);
 // src/relay.ts
 async function createLocalRelay(options = {}) {
   const secret = (0, import_node_crypto.randomBytes)(24).toString("hex");
+  const socketPath = `/v4/${secret}`;
   const peers = /* @__PURE__ */ new Map();
   let controller;
   let closing = false;
@@ -3799,7 +3800,7 @@ async function createLocalRelay(options = {}) {
   }
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url || "/", "http://127.0.0.1");
-    if (url.pathname !== "/v4" || url.searchParams.get("key") !== secret || closing) {
+    if (url.pathname.replace(/\/$/, "") !== socketPath || closing) {
       socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
       socket.destroy();
       return;
@@ -3895,7 +3896,7 @@ async function createLocalRelay(options = {}) {
   if (!address || typeof address === "string") throw new Error("\u65E0\u6CD5\u8BFB\u53D6\u672C\u5730\u4E2D\u7EE7\u7AEF\u53E3\u3002");
   const host = `127.0.0.1:${address.port}`;
   const info = {
-    url: `ws://${host}/v4?key=${secret}`,
+    url: `ws://${host}${socketPath}`,
     leaseUrl: `http://${host}/lease?key=${secret}`,
     shutdownUrl: `http://${host}/shutdown?key=${secret}`
   };

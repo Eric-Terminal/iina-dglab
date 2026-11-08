@@ -23,7 +23,7 @@ export class LocalRelay {
       const result = await this.api.utils.exec(node, [scriptPath, '--launch']);
       if (result.status !== 0) throw new Error(result.stderr.trim() || '本地中继启动失败。');
       const info = JSON.parse(result.stdout.trim()) as RelayInfo;
-      if (!/^ws:\/\/127\.0\.0\.1:\d+\/v4\?key=[a-f0-9]+$/.test(info.url)) throw new Error('本地中继返回了无效的连接地址。');
+      if (!/^ws:\/\/127\.0\.0\.1:\d+\/v4\/[a-f0-9]+$/.test(info.url)) throw new Error('本地中继返回了无效的连接地址。');
       if (generation !== this.generation) {
         await this.post(info.shutdownUrl);
         throw new Error('本地中继启动已取消。');

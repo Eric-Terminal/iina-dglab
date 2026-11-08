@@ -33,6 +33,7 @@ test('连接与预览不会输出，必须手动开始；每通道遵守 App 上
 test('暂停清队列并归零，恢复仅在仍处于联动状态时输出', async () => {
   const s = setup(); await s.controller.start(); s.tick(); await flush();
   s.controller.accept(sample(s.now(), { running: false, reason: '暂停' })); await flush();
+  s.controller.watchdog();
   assert.equal(s.calls.filter(c => c.name === 'clearOperate').length, 2);
   assert.equal(s.calls.filter(c => c.name === 'resetIntensity').length, 2);
   assert.equal(s.controller.armed, true);
@@ -40,6 +41,27 @@ test('暂停清队列并归零，恢复仅在仍处于联动状态时输出', as
   assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 4);
   await s.controller.stop(); const count = s.calls.length; s.tick();
   assert.equal(s.calls.length, count);
+});
+test('暂停、静音、缓冲和跳转的持续心跳不应误报采样超时', async () => {
+  const s = setup(); await s.controller.start(); s.tick(); await flush();
+  for (const reason of ['播放已暂停', '播放器已静音', '正在缓冲或定位', '正在定位']) {
+    for (let i = 0; i < 10; i++) {
+      s.advance(100);
+      s.controller.accept(sample(s.now(), { running: false, reason, rmsDb: null, peakDb: null, zcr: null }));
+      s.controller.watchdog();
+      assert.equal(s.controller.armed, true);
+    }
+    assert.equal(s.controller.reason, reason);
+  }
+  await flush();
+  assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 2);
+  s.tick(); await flush();
+  assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 4);
+  s.advance(400); s.controller.watchdog(); await flush();
+  assert.equal(s.controller.armed, false);
+  s.tick(); await s.controller.start(); s.tick(); await flush();
+  assert.equal(s.controller.armed, true);
+  assert.equal(s.controller.starting, false);
 });
 test('门限关闭立即清除波形与强度，不发送低电平拖尾', async () => {
   const s = setup(); await s.controller.start(); s.tick(); await flush();
@@ -52,6 +74,35 @@ test('过期采样和失去音源自动解除联动', async () => {
   s.advance(400); s.controller.watchdog(); await flush();
   assert.equal(s.controller.armed, false);
   const count = s.calls.length; s.tick(); assert.equal(s.calls.length, count);
+});
+test('运行中应用参数保持联动，等旧任务清理完成后使用新上限', async () => {
+  const s = setup(); await s.controller.start(); s.tick(); await flush();
+  const releases: (() => void)[] = [];
+  s.transport.clearOperate = () => new Promise<void>(resolve => releases.push(resolve));
+  s.controller.configure({ ...s.controller.settings, capA: 4, capB: 7, gateDb: -42 });
+  assert.equal(s.controller.armed, true);
+  assert.match(s.controller.reason, /继续联动/);
+  s.tick(); await flush();
+  assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 2);
+  releases.forEach(resolve => resolve()); await flush();
+  s.tick(); await flush();
+  assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 4);
+  assert.deepEqual(s.calls.filter(c => c.name === 'setTempIntensity').slice(-2).map(c => c.args[3]), [4, 7]);
+});
+test('未开启时应用参数不输出，参数清理期间点击停止也不会自行重新开始', async () => {
+  const s = setup();
+  s.controller.configure({ ...s.controller.settings, gateDb: -42 });
+  s.tick(); await flush();
+  assert.equal(s.controller.armed, false); assert.equal(s.calls.length, 0);
+  await s.controller.start(); s.tick(); await flush();
+  const releases: (() => void)[] = [];
+  s.transport.clearOperate = () => new Promise<void>(resolve => releases.push(resolve));
+  s.controller.configure({ ...s.controller.settings, gateDb: -40 });
+  const stopped = s.controller.stop();
+  releases.forEach(resolve => resolve()); await stopped;
+  const count = s.calls.length;
+  s.tick(); await flush();
+  assert.equal(s.controller.armed, false); assert.equal(s.calls.length, count);
 });
 test('设备离线或切换不会自动恢复输出', async () => {
   const s = setup(); await s.controller.start(); s.tick(); await flush();

@@ -74,7 +74,7 @@
         const result = await this.api.utils.exec(node, [scriptPath, "--launch"]);
         if (result.status !== 0) throw new Error(result.stderr.trim() || "\u672C\u5730\u4E2D\u7EE7\u542F\u52A8\u5931\u8D25\u3002");
         const info = JSON.parse(result.stdout.trim());
-        if (!/^ws:\/\/127\.0\.0\.1:\d+\/v4\?key=[a-f0-9]+$/.test(info.url)) throw new Error("\u672C\u5730\u4E2D\u7EE7\u8FD4\u56DE\u4E86\u65E0\u6548\u7684\u8FDE\u63A5\u5730\u5740\u3002");
+        if (!/^ws:\/\/127\.0\.0\.1:\d+\/v4\/[a-f0-9]+$/.test(info.url)) throw new Error("\u672C\u5730\u4E2D\u7EE7\u8FD4\u56DE\u4E86\u65E0\u6548\u7684\u8FDE\u63A5\u5730\u5740\u3002");
         if (generation !== this.generation) {
           await this.post(info.shutdownUrl);
           throw new Error("\u672C\u5730\u4E2D\u7EE7\u542F\u52A8\u5DF2\u53D6\u6D88\u3002");
@@ -131,7 +131,7 @@
   }
   var savedServer = preferences.get("server");
   var server = typeof savedServer === "string" ? savedServer : OFFICIAL_SERVER;
-  var connectionMode = preferences.get("connectionMode") === "remote" ? "remote" : "local";
+  var connectionMode = preferences.get("connectionMode") === "local" ? "local" : "remote";
   var nodePath = String(preferences.get("nodePath") || "");
   var relay = new LocalRelay(iina);
   var relayGeneration = 0;
@@ -183,7 +183,7 @@
       server = data.server;
       preferences.set("settings", settings);
       preferences.set("server", server);
-      connectionMode = data.connectionMode === "remote" ? "remote" : "local";
+      connectionMode = data.connectionMode === "local" ? "local" : "remote";
       nodePath = data.nodePath.trim();
       preferences.set("connectionMode", connectionMode);
       preferences.set("nodePath", nodePath);

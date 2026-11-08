@@ -3530,9 +3530,11 @@
     }
     configure(settings) {
       const valid = validateSettings(settings);
-      void this.stop("\u53C2\u6570\u5DF2\u5E94\u7528\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8");
+      const keepArmed = this.armed;
       this.settings = valid;
       this.mapper.reset();
+      this.wave = null;
+      void this.silence(keepArmed ? "\u53C2\u6570\u5DF2\u5E94\u7528\uFF0C\u7EE7\u7EED\u8054\u52A8" : "\u53C2\u6570\u5DF2\u5E94\u7528", !keepArmed);
       this.changed();
     }
     async start() {
@@ -3569,8 +3571,11 @@
       }
       return result;
     }
+    hasRecentSample() {
+      return !!this.sample && this.now() - this.sample.at >= 0 && this.now() - this.sample.at <= STALE_MS;
+    }
     isFresh() {
-      return !!this.sample?.running && this.now() - this.sample.at >= 0 && this.now() - this.sample.at <= STALE_MS;
+      return !!this.sample?.running && this.hasRecentSample();
     }
     accept(sample) {
       this.sample = sample;
@@ -3617,7 +3622,7 @@
       });
     }
     watchdog() {
-      if (this.armed && !this.isFresh()) void this.stop("\u97F3\u9891\u91C7\u6837\u8D85\u65F6\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8");
+      if (this.armed && !this.hasRecentSample()) void this.stop("\u97F3\u9891\u91C7\u6837\u8D85\u65F6\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8");
     }
     stop(reason = "\u5DF2\u505C\u6B62\u8054\u52A8") {
       this.mapper.reset();
@@ -3849,9 +3854,9 @@
     $("remote-settings").hidden = local;
     $("connection-hint").textContent = local ? "\u8FDE\u63A5\u540E\uFF0C\u5C06 Socket \u5730\u5740\u7C98\u8D34\u5230\u540C\u4E00\u53F0 Mac \u7684\u5B98\u65B9 App\u3002" : "\u8FDE\u63A5\u540E\uFF0C\u7528\u5B98\u65B9 App \u7684 Socket \u63A7\u5236\u626B\u7801\u6216\u7C98\u8D34\u5730\u5740\u914D\u5BF9\u3002";
     $("dirty").textContent = dirty ? "\u4FEE\u6539\u5C1A\u672A\u5E94\u7528" : "\u53C2\u6570\u5DF2\u5E94\u7528";
-    $("status").textContent = controller.reason;
+    $("status").textContent = controller.reason + (dirty ? " \xB7 \u53C2\u6570\u5C1A\u672A\u5E94\u7528\uFF0C\u8BF7\u5148\u70B9\u300C\u5E94\u7528\u53C2\u6570\u300D\u3002" : "");
     $("start").disabled = controller.armed || controller.starting || connecting || disconnecting || !controller.target || !hasSource || !supportsWindowTracking || dirty;
-    $("start").textContent = controller.armed ? "\u8054\u52A8\u5DF2\u5F00\u542F" : controller.starting ? "\u6B63\u5728\u51C6\u5907\u2026" : "\u5F00\u59CB\u8054\u52A8";
+    $("start").textContent = controller.armed ? "\u8054\u52A8\u5DF2\u5F00\u542F" : controller.starting ? "\u6B63\u5728\u51C6\u5907\u2026" : dirty ? "\u8BF7\u5148\u5E94\u7528\u53C2\u6570" : "\u5F00\u59CB\u8054\u52A8";
     const sample = controller.sample;
     const number = (n, digits = 1) => typeof n === "number" && Number.isFinite(n) ? Math.max(-99, n).toFixed(digits) : "\u2014";
     $("rms").textContent = number(sample?.rmsDb);
@@ -3956,7 +3961,7 @@
       }
       if (!connecting && !["paired", "waiting_for_peer"].includes(socketState)) {
         serverInput.value = data.server;
-        modeInput.value = data.connectionMode === "remote" ? "remote" : "local";
+        modeInput.value = data.connectionMode === "local" ? "local" : "remote";
         nodeInput.value = data.nodePath || "";
       }
       hasSource = data.hasSource;
