@@ -27,10 +27,10 @@ test('IINA 入口按标签增删滤镜，并正确处理暂停、静音、跳转
     (files.get(activePath) || '') + statsFrame(position, -20) + statsFrame(position + 0.1, -10) + statsFrame(position + 0.2, -30) + statsFrame(position + 0.3));
   class Clock extends Date { static now() { return now; } }
   vm.runInNewContext(code, { Date: Clock, setInterval: (fn: Function) => { tick = fn; }, iina: {
-    core: { status }, menu: { item(name: string, fn: Function) { menus[name] = fn; }, addItem() {} },
+    core: { status }, menu: { item(name: string, fn: Function) { menus[name] = fn; }, addItem() {}, removeAllItems() {} },
     global: { onMessage: (name: string, fn: Function) => { handlers[name] = fn; }, postMessage: (name: string, data: any) => { messages.push({ name, data }); } },
     event: { on: (name: string, fn: Function) => { events[name] = fn; } },
-    preferences: { get: () => settings }, utils: { resolvePath: (path: string) => path },
+    preferences: { get: (name: string) => name === 'language' ? 'zh-CN' : settings }, utils: { resolvePath: (path: string) => path },
     file: {
       exists: (path: string) => files.has(path),
       write: (path: string, text: string) => { activePath = path; files.set(path, text); oversized = false; },
@@ -108,8 +108,8 @@ test('全局入口切换普通播放窗口时定向停用旧音源，不使用 n
     standaloneWindow: { loadFile() {}, setProperty() {}, setFrame() {},
       onMessage: (name: string, fn: Function) => { windowHandlers[name] = fn; },
       postMessage: (name: string, data: any) => windowMessages.push({ name, data }), open() { visible = true; }, isOpen: () => visible },
-    menu: { item(name: string, fn: Function) { menus[name] = fn; }, addItem() {} },
-    preferences: { get: (name: string) => name === 'settings' ? oldSettings : undefined }, console: { warn() {} },
+    menu: { item(name: string, fn: Function) { menus[name] = fn; }, addItem() {}, removeAllItems() {} },
+    preferences: { get: (name: string) => name === 'language' ? 'zh-CN' : name === 'settings' ? oldSettings : undefined }, console: { warn() {} },
   } });
   handlers['select-source']({ title: '第一个窗口' }, 'player-1');
   handlers['select-source']({ title: '第二个窗口' }, 'player-2');

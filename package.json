@@ -8,8 +8,12 @@
     "url": "https://github.com/Eric-Terminal/iina-dglab.git"
   },
   "homepage": "https://github.com/Eric-Terminal/iina-dglab#readme",
-  "bugs": { "url": "https://github.com/Eric-Terminal/iina-dglab/issues" },
-  "engines": { "node": ">=22" },
+  "bugs": {
+    "url": "https://github.com/Eric-Terminal/iina-dglab/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "description": "IINA 与 DG-LAB 4 的音频联动插件",
   "type": "module",
   "scripts": {
@@ -26,12 +30,14 @@
     "ws": "8.22.1"
   },
   "devDependencies": {
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^22.0.0",
     "@types/qrcode": "^1.5.5",
+    "@types/ws": "^8.18.0",
     "esbuild": "^0.25.0",
     "iina-plugin-definition": "0.99.5",
+    "jsdom": "^31.0.0",
     "tsx": "^4.20.0",
-    "typescript": "^5.9.0",
-    "@types/ws": "^8.18.0"
+    "typescript": "^5.9.0"
   }
 }

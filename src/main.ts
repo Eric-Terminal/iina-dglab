@@ -1,8 +1,10 @@
 import { FILTER_LABEL, SAMPLE_MS, STALE_MS, type AudioSample } from './shared';
 import { AudioTimeline, timingFilter } from './audio-timing';
 import { AudioBuffer } from './audio-buffer';
+import { setLanguage, t } from './i18n';
 
 const { mpv, event, core, menu, file, utils, preferences, global: hub } = iina;
+setLanguage(preferences.get('language'));
 let capturing = false;
 let seekUntil = 0;
 let lastPosition = -1;
@@ -133,12 +135,17 @@ function capture(enabled: boolean): void {
 }
 hub.onMessage('capture', ({ enabled }: { enabled: boolean }) => capture(enabled));
 
-menu.addItem(menu.item('打开音频联动（使用当前窗口）', () => {
+function updateMenu(): void {
+  menu.removeAllItems();
+  menu.addItem(menu.item(t('打开音频联动（使用当前窗口）'), () => {
   hub.postMessage('select-source', { title: core.status.title || 'IINA' });
   // 从用户选中的播放窗口直接启用采样，避免依赖跨上下文回传后才挂载滤镜。
   capture(true);
-}));
-menu.addItem(menu.item('停止郊狼输出', () => hub.postMessage('emergency-stop', {}), { keyBinding: 'Ctrl+Alt+ESC' }));
+  }));
+  menu.addItem(menu.item(t('停止郊狼输出'), () => hub.postMessage('emergency-stop', {}), { keyBinding: 'Ctrl+Alt+ESC' }));
+}
+updateMenu();
+hub.onMessage('language', (data: { language: string; locale: string }) => { setLanguage(data.language, data.locale); updateMenu(); });
 
 event.on('iina.file-loaded', () => {
   if (!capturing) return;

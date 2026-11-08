@@ -4,6 +4,8 @@ body { margin:0; background:var(--bg); color:var(--text); font:13px/1.5 -apple-s
 main { max-width:920px; padding:24px; margin:auto; }
 header,.row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
 header { margin-bottom:20px; }
+.header-controls { display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end; }
+.header-controls select { width:auto; display:block; }
 h1 { font-size:25px; letter-spacing:-.6px; margin:3px 0 0; font-weight:650; }
 h2 { font-size:14px; margin:0; font-weight:600; }
 p { color:var(--muted); margin:5px 0 12px; font-size:12px; }

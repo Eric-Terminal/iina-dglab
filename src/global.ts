@@ -1,9 +1,12 @@
 import { DEFAULT_SETTINGS, OFFICIAL_SERVER, STALE_MS, validateSettings, type AudioSample, type Settings } from './shared';
 import { LocalRelay } from './local-relay';
+import { setLanguage, t, type Language } from './i18n';
 
 const { global: hub, standaloneWindow: window, menu, preferences, console: log } = iina;
 const windowAPI = window as typeof window & { isOpen?: () => boolean };
 const supportsWindowTracking = typeof windowAPI.isOpen === 'function';
+let language: Language = ['zh-CN', 'en'].includes(preferences.get('language')) ? preferences.get('language') : 'system';
+setLanguage(language);
 let selectedPlayer: string | undefined;
 let sourceTitle = '请从播放窗口的插件菜单选择音源';
 let lastSample: AudioSample | undefined;
@@ -22,11 +25,11 @@ const relay = new LocalRelay(iina);
 let relayGeneration = 0;
 
 window.loadFile('dist/ui.html');
-window.setProperty({ title: '音频联动', resizable: true });
+window.setProperty({ title: t('音频联动'), resizable: true });
 window.setFrame(820, 840);
 
 function initializeUI(): void {
-  window.postMessage('init', { settings, server, connectionMode, nodePath, sourceTitle, hasSource: !!selectedPlayer, supportsWindowTracking });
+  window.postMessage('init', { language, settings, server, connectionMode, nodePath, sourceTitle, hasSource: !!selectedPlayer, supportsWindowTracking });
   if (lastSample && Date.now() - lastSample.at <= STALE_MS) window.postMessage('audio', lastSample);
 }
 
@@ -37,8 +40,19 @@ function open(): void {
 }
 function stop(reason: string): void { window.postMessage('stop', { reason }); }
 
-menu.addItem(menu.item('打开音频联动控制台', open));
-menu.addItem(menu.item('停止郊狼输出', () => stop('已手动停止')));
+function updateMenu(): void {
+  menu.removeAllItems();
+  menu.addItem(menu.item(t('打开音频联动控制台'), open));
+  menu.addItem(menu.item(t('停止郊狼输出'), () => stop('已手动停止')));
+}
+updateMenu();
+window.onMessage('language', (data: { language: Language; locale: string }) => {
+  language = ['zh-CN', 'en'].includes(data.language) ? data.language : 'system';
+  setLanguage(language, data.locale);
+  preferences.set('language', language); preferences.sync();
+  window.setProperty({ title: t('音频联动') }); updateMenu();
+  if (selectedPlayer) hub.postMessage(selectedPlayer, 'language', { language, locale: data.locale });
+});
 hub.onMessage('select-source', (data: { title: string }, player?: string) => {
   if (!player) return;
   stop('音源已切换，请重新开始联动');
