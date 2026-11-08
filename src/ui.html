@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>郊狼音频联动</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div><div class="eyebrow">IINA / DG-LAB 4</div><h1>音频联动</h1></div>
+      <span class="badge" id="connection-state">未连接</span>
+    </header>
+    <section class="panel connection">
+      <div class="row"><div><h2>连接郊狼</h2><p id="connection-hint">连接后，用官方 App 的 Socket 控制扫码配对。</p></div><button id="connect" class="secondary">连接 App</button></div>
+      <details id="pairing" hidden>
+        <summary>配对二维码与连接地址</summary>
+        <div class="pair-grid"><canvas id="qr" aria-label="App 配对二维码"></canvas><div><p>DG-LAB 4 → Socket 控制 → 连接服务器</p><p>同一台 Mac 上，可复制下方地址到 App。</p><label for="pair-url">Socket 地址</label><div class="copy-row"><input id="pair-url" readonly><button id="copy">复制</button></div></div></div>
+      </details>
+      <details class="server-details"><summary>服务器</summary><label for="server">V4 WebSocket 地址</label><input id="server" type="url" spellcheck="false" value="wss://trex.dungeon-lab.cn/v4"><p>默认使用官方中继；也可填写自建 V4 服务地址。</p></details>
+      <label for="device">输出设备</label><select id="device"><option value="">等待 App 连接</option></select>
+    </section>
+    <section class="panel monitor">
+      <div class="row"><h2>当前音源</h2><span id="signal-state" class="muted">等待音频</span></div>
+      <p class="source" id="source">从播放窗口的插件菜单选择「打开音频联动」。</p>
+      <canvas id="scope" width="740" height="90" aria-label="最近十二秒的音频电平"></canvas>
+      <div class="readings">
+        <div><span>RMS</span><strong id="rms">—</strong><small>dBFS</small></div>
+        <div><span>峰值</span><strong id="peak">—</strong><small>dBFS</small></div>
+        <div><span>过零率</span><strong id="zcr">—</strong><small>48 kHz 标度</small></div>
+        <div><span>波形预览</span><strong id="amplitude">0</strong><small>/ 100</small></div>
+      </div>
+    </section>
+    <form id="settings" class="panel">
+      <div class="row"><h2>映射与通道</h2><span id="dirty" class="muted">参数已应用</span></div>
+      <div class="fields primary-fields">
+        <label>电平来源<select name="metric"><option value="hybrid">动态混合 · 响度与起音</option><option value="rms">RMS · 平均响度</option><option value="peak">Peak · 瞬时峰值</option></select></label>
+        <label>噪声门限 <small>dBFS</small><input name="gateDb" type="number" min="-90" max="-1" step="1" required></label>
+        <label>满幅电平 <small>dBFS</small><input name="ceilingDb" type="number" min="-60" max="0" step="1" required></label>
+      </div>
+      <div class="channels">
+        <div class="channel"><label class="check"><input name="channelA" type="checkbox"> A 通道</label><label>强度上限<input name="capA" type="number" min="0" max="200" step="1" required></label><p id="channel-a">等待 App 回传上限</p></div>
+        <div class="channel"><label class="check"><input name="channelB" type="checkbox"> B 通道</label><label>强度上限<input name="capB" type="number" min="0" max="200" step="1" required></label><p id="channel-b">等待 App 回传上限</p></div>
+      </div>
+      <details><summary>曲线与频率</summary>
+        <label class="check"><input name="adaptiveGate" type="checkbox"> 自适应底噪门限</label>
+        <div class="fields advanced-fields">
+          <label>响应指数<input name="gamma" type="number" min="0.2" max="3" step="0.05" required></label>
+          <label>波形幅度上限<input name="modulationMax" type="number" min="0" max="100" step="1" required></label>
+          <label>过零率下界<input name="zcrLow" type="number" min="0" max="1" step="0.01" required></label>
+          <label>过零率上界<input name="zcrHigh" type="number" min="0" max="1" step="0.01" required></label>
+          <label>高频编码<input name="frequencyLow" type="number" min="10" max="100" step="1" required></label>
+          <label>低频编码<input name="frequencyHigh" type="number" min="10" max="100" step="1" required></label>
+        </div>
+        <p>编码越小，脉冲越密。ZCR 仅反映声音特征，不识别声音内容。</p>
+      </details>
+      <div class="row apply-row"><p>实际通道强度不会超过 App 回传的上限。</p><button type="submit" class="secondary">应用参数</button></div>
+    </form>
+    <footer>
+      <p id="status" role="status" aria-live="polite">尚未开始联动</p>
+      <p id="error" class="error" role="alert" hidden></p>
+      <div class="actions"><button id="start" class="primary">开始联动</button><button id="stop" class="stop">停止输出 <kbd>Esc</kbd></button></div>
+      <p class="footnote">暂停、静音或低于门限时停止输出；继续播放后恢复。关闭控制台、切换媒体或断连后需手动重新开始。</p>
+    </footer>
+  </main>
+  <script src="ui.js"></script>
+</body>
+</html>

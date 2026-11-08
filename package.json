@@ -1,0 +1,29 @@
+{
+  "name": "iina-dglab",
+  "version": "1.0.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "description": "IINA 与 DG-LAB 4 的音频联动插件",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node node_modules/typescript/bin/tsc --noEmit",
+    "test": "node node_modules/tsx/dist/cli.mjs --test tests/*.test.ts",
+    "test:mpv": "node node_modules/tsx/dist/cli.mjs scripts/test-mpv.ts",
+    "pack": "npm run build && node scripts/pack.mjs"
+  },
+  "dependencies": {
+    "dglab-kit": "1.0.5",
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/qrcode": "^1.5.5",
+    "esbuild": "^0.25.0",
+    "iina-plugin-definition": "0.99.5",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "ws": "^8.18.0",
+    "@types/ws": "^8.18.0"
+  }
+}
