@@ -78,14 +78,9 @@ export class AudioController {
       this.busy = false;
       if (this.stopFailed) throw new Error('上次停止操作未获确认，请检查 App 后断开并重新连接。');
       if (!this.target || !isConnected(this.target)) throw new Error('请先连接 App 并选择在线的郊狼 3.0。');
-      if (!this.isFresh()) {
-        if (!this.sample) throw new Error('尚未收到音源采样，请从播放窗口的插件菜单重新选择音源。');
-        if (this.now() - this.sample.at > STALE_MS) throw new Error('音频采样已中断，请从播放窗口重新打开联动控制台。');
-        throw new Error(this.sample.reason || '音频统计尚未就绪，请稍后重试。');
-      }
       if (!this.channels().length) throw new Error('请设置至少一个通道的强度上限，并确认 App 已回传非零上限。');
       this.armed = true;
-      this.reason = '联动已就绪';
+      this.reason = this.isFresh() ? '联动已就绪' : '联动已开启，等待音频';
     } finally { this.starting = false; this.changed(); }
   }
 
@@ -147,8 +142,13 @@ export class AudioController {
   }
 
   watchdog(): void {
-    // 暂停、静音和跳转仍有采样心跳；只有消息本身过期才需要手动重新开始。
-    if (this.armed && !this.hasRecentSample()) void this.stop('音频采样超时，请重新开始联动');
+    if (!this.sample || this.hasRecentSample()) return;
+    // 超时只撤销当前输出，不撤销用户的联动开关；丢弃旧读数，等新采样再恢复。
+    this.sample = null;
+    this.wave = null;
+    this.mapper.reset();
+    if (this.armed) void this.silence('联动已开启，等待音频恢复', false);
+    else this.changed();
   }
 
   stop(reason = '已停止联动'): Promise<void> {

@@ -58,8 +58,9 @@ test('暂停、静音、缓冲和跳转的持续心跳不应误报采样超时',
   s.tick(); await flush();
   assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 4);
   s.advance(400); s.controller.watchdog(); await flush();
-  assert.equal(s.controller.armed, false);
-  s.tick(); await s.controller.start(); s.tick(); await flush();
+  assert.equal(s.controller.armed, true);
+  assert.equal(s.controller.wave, null);
+  s.tick(); await flush();
   assert.equal(s.controller.armed, true);
   assert.equal(s.controller.starting, false);
 });
@@ -69,11 +70,46 @@ test('门限关闭立即清除波形与强度，不发送低电平拖尾', async
   assert.equal(s.controller.wave?.intensity, 0);
   assert.equal(s.calls.filter(c => c.name === 'clearOperate').length, 2);
 });
-test('过期采样和失去音源自动解除联动', async () => {
+test('过期采样归零但保留开关，只用新采样自动恢复，不补发过期帧', async () => {
   const s = setup(); await s.controller.start(); s.tick(); await flush();
+  const oldSample = sample(s.now());
+  s.advance(400); s.controller.watchdog(); await flush();
+  assert.equal(s.controller.armed, true);
+  assert.match(s.controller.reason, /等待音频恢复/);
+  assert.equal(s.controller.wave, null); assert.equal(s.controller.sample, null);
+  assert.equal(s.calls.filter(c => c.name === 'clearOperate').length, 2);
+  assert.equal(s.calls.filter(c => c.name === 'resetIntensity').length, 2);
+  const count = s.calls.length;
+  s.advance(60000); s.controller.watchdog();
+  s.controller.accept(oldSample); s.controller.watchdog(); await flush();
+  assert.equal(s.calls.length, count);
+  s.tick(); await flush();
+  assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 4);
+  await s.controller.stop(); const stopped = s.calls.length;
+  s.tick(); s.controller.watchdog(); await flush();
+  assert.equal(s.calls.length, stopped);
+});
+test('采样中断后等待清理完成才恢复，期间手动停止不会被新采样重新开启', async () => {
+  const s = setup(); await s.controller.start(); s.tick(); await flush();
+  const releases: (() => void)[] = [];
+  s.transport.clearOperate = () => new Promise<void>(resolve => releases.push(resolve));
+  s.advance(400); s.controller.watchdog();
+  s.tick(); await flush();
+  assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 2);
+  const stopped = s.controller.stop();
+  releases.forEach(resolve => resolve()); await stopped;
+  s.tick(); await flush();
+  assert.equal(s.controller.armed, false);
+  assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 2);
+});
+test('采样中断时清理失败会解除联动，不因音频恢复而继续输出', async () => {
+  const s = setup(); await s.controller.start(); s.tick(); await flush();
+  s.transport.clearOperate = () => Promise.reject(new Error('清理超时'));
   s.advance(400); s.controller.watchdog(); await flush();
   assert.equal(s.controller.armed, false);
-  const count = s.calls.length; s.tick(); assert.equal(s.calls.length, count);
+  const count = s.calls.length;
+  s.tick(); s.controller.watchdog(); await flush();
+  assert.equal(s.calls.length, count);
 });
 test('运行中应用参数保持联动，等旧任务清理完成后使用新上限', async () => {
   const s = setup(); await s.controller.start(); s.tick(); await flush();
@@ -111,23 +147,28 @@ test('设备离线或切换不会自动恢复输出', async () => {
   s.controller.setTarget(target); const count = s.calls.length; s.tick();
   assert.equal(s.calls.length, count);
 });
-test('没有上限快照、强度全零或没有新鲜音频时拒绝开始', async () => {
+test('没有上限快照或强度全零时拒绝开启，有上限但无新鲜音频时开启等待', async () => {
   const s = setup(); s.controller.target!.device.slotState = { hasDevice: true };
   await assert.rejects(s.controller.start(), /强度上限/);
   s.controller.setTarget(target); s.controller.configure({ ...DEFAULT_SETTINGS });
   await assert.rejects(s.controller.start(), /强度上限/);
   s.controller.configure({ ...DEFAULT_SETTINGS, capA: 10 }); s.advance(500);
-  await assert.rejects(s.controller.start(), /采样已中断/);
-});
-test('未取得音频时反馈实际原因，而不是误报媒体没有音轨', async () => {
-  const s = setup();
-  s.controller.sample = null;
-  await assert.rejects(s.controller.start(), /尚未收到音源采样/);
-  s.controller.accept(sample(s.now(), { running: false, reason: '播放已暂停' }));
-  await assert.rejects(s.controller.start(), /播放已暂停/);
-  s.controller.accept(sample(s.now(), { running: false, reason: '音频统计滤镜挂载失败' }));
-  await assert.rejects(s.controller.start(), /滤镜挂载失败/);
+  await s.controller.start(); s.controller.watchdog();
+  assert.equal(s.controller.armed, true);
+  assert.match(s.controller.reason, /等待音频/);
   assert.equal(s.calls.length, 0);
+});
+test('首次没有采样、暂停或统计不可用时都能先开启，有效音频到来后自动输出', async () => {
+  for (const reason of [null, '播放已暂停', '音频统计滤镜挂载失败']) {
+    const s = setup();
+    s.controller.sample = reason === null ? null : sample(s.now(), { running: false, reason, rmsDb: null, peakDb: null, zcr: null });
+    await s.controller.start(); s.controller.watchdog();
+    assert.equal(s.controller.armed, true);
+    assert.match(s.controller.reason, /等待音频/);
+    assert.equal(s.calls.length, 0);
+    s.tick(); await flush();
+    assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 2);
+  }
 });
 test('App 响应慢时丢弃采样，不累计波形或补发历史帧', async () => {
   const s = setup(); let release!: () => void;

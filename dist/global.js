@@ -227,7 +227,7 @@
     windowWasOpen = visible;
     if (lastSample && Date.now() - lastSample.at > STALE_MS) {
       lastSample = void 0;
-      stop("\u97F3\u9891\u91C7\u6837\u5DF2\u4E2D\u65AD\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8");
+      window.postMessage("audio-stale", {});
     }
   }, 100);
 })();

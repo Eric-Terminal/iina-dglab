@@ -285,6 +285,8 @@ if (bridge) {
     if (samples.length > 120) samples.shift();
     drawScope();
   });
+  // 原生超时通知可能与新采样交错；按控制台当前持有的采样重新检查有效期。
+  bridge.onMessage('audio-stale', () => controller.watchdog());
   bridge.onMessage('stop', (data: { reason: string }) => { void controller.stop(data.reason); });
   bridge.onMessage('local-result', (data: { url?: string; error?: string }) => localResult?.(data));
   bridge.onMessage('disconnect', (data: { reason: string }) => { void disconnect(data.reason); });

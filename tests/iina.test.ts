@@ -50,7 +50,10 @@ test('全局入口切换普通播放窗口时定向停用旧音源，不使用 n
   const sent: unknown[][] = [];
   const windowHandlers: Record<string, Function> = {};
   const windowMessages: { name: string; data: any }[] = [];
-  vm.runInNewContext(code, { setInterval() {}, iina: {
+  let now = 1000;
+  let checkSamples!: Function;
+  class Clock extends Date { static now() { return now; } }
+  vm.runInNewContext(code, { Date: Clock, setInterval(fn: Function, ms: number) { if (ms === 100) checkSamples = fn; }, iina: {
     global: { onMessage: (name: string, fn: Function) => { handlers[name] = fn; }, postMessage: (...args: unknown[]) => sent.push(args) },
     standaloneWindow: { loadFile() {}, setProperty() {}, setFrame() {},
       onMessage: (name: string, fn: Function) => { windowHandlers[name] = fn; },
@@ -65,4 +68,13 @@ test('全局入口切换普通播放窗口时定向停用旧音源，不使用 n
   assert.equal((sent[0][2] as any).enabled, false);
   windowHandlers.ready();
   assert.equal(windowMessages.find(message => message.name === 'init')!.data.connectionMode, 'remote');
+  handlers.audio({ at: now, title: '第二个窗口', running: false, reason: '播放已暂停' }, 'player-2');
+  now += 400;
+  checkSamples();
+  assert.equal(windowMessages.at(-1)!.name, 'audio-stale');
+  const count = windowMessages.length;
+  checkSamples();
+  assert.equal(windowMessages.length, count);
+  handlers.audio({ at: now, title: '第二个窗口', running: true, reason: '' }, 'player-2');
+  assert.equal(windowMessages.at(-1)!.name, 'audio');
 });

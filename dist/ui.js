@@ -3548,14 +3548,9 @@
         this.busy = false;
         if (this.stopFailed) throw new Error("\u4E0A\u6B21\u505C\u6B62\u64CD\u4F5C\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u68C0\u67E5 App \u540E\u65AD\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5\u3002");
         if (!this.target || !isConnected(this.target)) throw new Error("\u8BF7\u5148\u8FDE\u63A5 App \u5E76\u9009\u62E9\u5728\u7EBF\u7684\u90CA\u72FC 3.0\u3002");
-        if (!this.isFresh()) {
-          if (!this.sample) throw new Error("\u5C1A\u672A\u6536\u5230\u97F3\u6E90\u91C7\u6837\uFF0C\u8BF7\u4ECE\u64AD\u653E\u7A97\u53E3\u7684\u63D2\u4EF6\u83DC\u5355\u91CD\u65B0\u9009\u62E9\u97F3\u6E90\u3002");
-          if (this.now() - this.sample.at > STALE_MS) throw new Error("\u97F3\u9891\u91C7\u6837\u5DF2\u4E2D\u65AD\uFF0C\u8BF7\u4ECE\u64AD\u653E\u7A97\u53E3\u91CD\u65B0\u6253\u5F00\u8054\u52A8\u63A7\u5236\u53F0\u3002");
-          throw new Error(this.sample.reason || "\u97F3\u9891\u7EDF\u8BA1\u5C1A\u672A\u5C31\u7EEA\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002");
-        }
         if (!this.channels().length) throw new Error("\u8BF7\u8BBE\u7F6E\u81F3\u5C11\u4E00\u4E2A\u901A\u9053\u7684\u5F3A\u5EA6\u4E0A\u9650\uFF0C\u5E76\u786E\u8BA4 App \u5DF2\u56DE\u4F20\u975E\u96F6\u4E0A\u9650\u3002");
         this.armed = true;
-        this.reason = "\u8054\u52A8\u5DF2\u5C31\u7EEA";
+        this.reason = this.isFresh() ? "\u8054\u52A8\u5DF2\u5C31\u7EEA" : "\u8054\u52A8\u5DF2\u5F00\u542F\uFF0C\u7B49\u5F85\u97F3\u9891";
       } finally {
         this.starting = false;
         this.changed();
@@ -3622,7 +3617,12 @@
       });
     }
     watchdog() {
-      if (this.armed && !this.hasRecentSample()) void this.stop("\u97F3\u9891\u91C7\u6837\u8D85\u65F6\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8");
+      if (!this.sample || this.hasRecentSample()) return;
+      this.sample = null;
+      this.wave = null;
+      this.mapper.reset();
+      if (this.armed) void this.silence("\u8054\u52A8\u5DF2\u5F00\u542F\uFF0C\u7B49\u5F85\u97F3\u9891\u6062\u590D", false);
+      else this.changed();
     }
     stop(reason = "\u5DF2\u505C\u6B62\u8054\u52A8") {
       this.mapper.reset();
@@ -3977,6 +3977,7 @@
       if (samples.length > 120) samples.shift();
       drawScope();
     });
+    bridge.onMessage("audio-stale", () => controller.watchdog());
     bridge.onMessage("stop", (data) => {
       void controller.stop(data.reason);
     });

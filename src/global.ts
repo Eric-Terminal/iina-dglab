@@ -102,6 +102,6 @@ setInterval(() => {
   windowWasOpen = visible;
   if (lastSample && Date.now() - lastSample.at > STALE_MS) {
     lastSample = undefined;
-    stop('音频采样已中断，请重新开始联动');
+    window.postMessage('audio-stale', {});
   }
 }, 100);
