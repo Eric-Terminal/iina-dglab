@@ -3354,8 +3354,10 @@
   var STALE_MS = 350;
   var OFFICIAL_SERVER = "wss://trex.dungeon-lab.cn/v4";
   var FILTER_LABEL = "iina_dglab";
-  var AUDIO_FILTER = `@${FILTER_LABEL}:lavfi=[astats=metadata=1:reset=1:measure_perchannel=RMS_level+Peak_level+Zero_crossings_rate:measure_overall=RMS_level+Peak_level]`;
+  var ASTATS_FILTER = "astats=metadata=1:reset=1:measure_perchannel=RMS_level+Peak_level+Zero_crossings_rate:measure_overall=RMS_level+Peak_level";
+  var AUDIO_FILTER = `@${FILTER_LABEL}:lavfi=[${ASTATS_FILTER}]`;
   var DEFAULT_SETTINGS = {
+    advanceMs: 0,
     metric: "hybrid",
     adaptiveGate: true,
     gateDb: -38,
@@ -3375,6 +3377,7 @@
     if (!value || typeof value !== "object") throw new Error("\u53C2\u6570\u683C\u5F0F\u65E0\u6548\u3002");
     const s = value;
     const ranges = [
+      ["advanceMs", 0, 1e3],
       ["gateDb", -90, -1],
       ["ceilingDb", -60, 0],
       ["gamma", 0.2, 3],

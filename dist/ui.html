@@ -43,6 +43,8 @@
         <label>噪声门限 <small>dBFS</small><input name="gateDb" type="number" min="-90" max="-1" step="1" required></label>
         <label>满幅电平 <small>dBFS</small><input name="ceilingDb" type="number" min="-60" max="0" step="1" required></label>
       </div>
+      <label>波形提前量 <small>ms</small><input name="advanceMs" type="number" min="0" max="1000" step="1" required></label>
+      <p>默认 0。填 100 表示提前 100 ms；若提示预读不足，请减小数值。</p>
       <div class="channels">
         <div class="channel"><label class="check"><input name="channelA" type="checkbox"> A 通道</label><label>强度上限<input name="capA" type="number" min="0" max="200" step="1" required></label><p id="channel-a">等待 App 回传上限</p></div>
         <div class="channel"><label class="check"><input name="channelB" type="checkbox"> B 通道</label><label>强度上限<input name="capB" type="number" min="0" max="200" step="1" required></label><p id="channel-b">等待 App 回传上限</p></div>

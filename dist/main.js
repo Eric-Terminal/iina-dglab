@@ -4,7 +4,8 @@
   var SAMPLE_MS = 100;
   var STALE_MS = 350;
   var FILTER_LABEL = "iina_dglab";
-  var AUDIO_FILTER = `@${FILTER_LABEL}:lavfi=[astats=metadata=1:reset=1:measure_perchannel=RMS_level+Peak_level+Zero_crossings_rate:measure_overall=RMS_level+Peak_level]`;
+  var ASTATS_FILTER = "astats=metadata=1:reset=1:measure_perchannel=RMS_level+Peak_level+Zero_crossings_rate:measure_overall=RMS_level+Peak_level";
+  var AUDIO_FILTER = `@${FILTER_LABEL}:lavfi=[${ASTATS_FILTER}]`;
   var clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 
   // src/audio.ts
@@ -37,26 +38,118 @@
     return { rmsDb, peakDb, zcr: clamp(weightedZcr / energy * sampleRate / 48e3, 0, 1) };
   }
 
+  // src/audio-timing.ts
+  var AudioTimeline = class {
+    constructor() {
+      this.text = "";
+      this.pending = null;
+      this.frames = [];
+    }
+    reset() {
+      this.text = "";
+      this.pending = null;
+      this.frames = [];
+    }
+    append(chunk, sampleRate) {
+      this.text += chunk;
+      let newline;
+      while ((newline = this.text.indexOf("\n")) !== -1) {
+        const line = this.text.slice(0, newline).trim();
+        this.text = this.text.slice(newline + 1);
+        const header = /^frame:\s*\d+\s+pts:\s*\S+\s+pts_time:\s*([-\d.e+]+)/.exec(line);
+        if (header) {
+          const pts = Number(header[1]);
+          if (!Number.isFinite(pts)) continue;
+          if (this.pending) {
+            const features = readFeatures(this.pending.metadata, sampleRate);
+            if (pts <= this.pending.pts) this.frames = [];
+            else if (features) this.frames.push({ start: this.pending.pts, end: pts, features });
+          }
+          this.pending = { pts, metadata: {} };
+        } else if (this.pending) {
+          const equals = line.indexOf("=");
+          if (equals > 0) this.pending.metadata[line.slice(0, equals)] = line.slice(equals + 1);
+        }
+      }
+      if (this.frames.length > 2e3) this.frames.splice(0, this.frames.length - 2e3);
+    }
+    at(position, advanceMs, speed) {
+      const target = position + advanceMs * speed / 1e3;
+      while (this.frames.length && this.frames[0].end < position - 1) this.frames.shift();
+      const frame = this.frames.find((frame2) => frame2.start <= target && target < frame2.end);
+      return frame && frame.end - frame.start <= 0.25 ? frame.features : null;
+    }
+  };
+  function timingFilter(path) {
+    const option = path.replace(/[\\':]/g, "\\$&");
+    const escaped = option.replace(/[\\'\[\],;]/g, "\\$&");
+    return `@${FILTER_LABEL}:lavfi=[${ASTATS_FILTER},ametadata=mode=print:file=${escaped}:direct=1]`;
+  }
+
+  // src/audio-buffer.ts
+  var AudioBuffer = class {
+    constructor(mpv2) {
+      this.mpv = mpv2;
+    }
+    update(advanceMs) {
+      if (advanceMs === 0 && this.original === void 0) return false;
+      const current = this.mpv.getNumber("audio-buffer");
+      if (!Number.isFinite(current)) throw new Error("\u65E0\u6CD5\u8BFB\u53D6\u64AD\u653E\u5668\u7684\u97F3\u9891\u7F13\u51B2\u8BBE\u7F6E");
+      if (this.original === void 0 || current !== this.applied) this.original = current;
+      const desired = advanceMs > 0 ? Math.max(this.original, advanceMs / 1e3 + 0.25) : this.original;
+      if (desired !== current) {
+        this.mpv.set("audio-buffer", desired);
+        if (this.mpv.getNumber("audio-buffer") !== desired) throw new Error("\u65E0\u6CD5\u8C03\u6574\u97F3\u9891\u9884\u8BFB\u7F13\u51B2");
+      }
+      this.applied = desired;
+      if (advanceMs === 0) {
+        this.original = void 0;
+        this.applied = void 0;
+      }
+      return desired !== current;
+    }
+    restore() {
+      this.update(0);
+    }
+  };
+
   // src/main.ts
-  var { mpv, event, core, menu, global: hub } = iina;
+  var { mpv, event, core, menu, file, utils, preferences, global: hub } = iina;
   var capturing = false;
   var seekUntil = 0;
   var lastPosition = -1;
   var lastProgressAt = 0;
   var lastFilterAttempt = -Infinity;
   var filterError = "";
+  var stats;
+  var statsPath;
+  var timeline = new AudioTimeline();
+  var audioBuffer = new AudioBuffer(mpv);
+  function closeStats() {
+    stats?.close();
+    stats = void 0;
+    if (statsPath && file.exists(statsPath)) file.delete(statsPath);
+    statsPath = void 0;
+    timeline.reset();
+  }
   function installFilter() {
     if (!capturing || core.status.idle) return;
     const filters = mpv.getNative("af") || [];
     const existing = filters.find((filter) => filter.label === FILTER_LABEL);
-    if (existing) {
+    if (existing && stats) {
       filterError = existing.enabled === false ? "\u97F3\u9891\u7EDF\u8BA1\u6EE4\u955C\u88AB\u7981\u7528\uFF0C\u8BF7\u5728 IINA \u4E2D\u542F\u7528\u5B83" : "";
       return;
     }
     if (Date.now() - lastFilterAttempt < 1e3) return;
     lastFilterAttempt = Date.now();
     try {
-      mpv.command("af", ["add", AUDIO_FILTER]);
+      if (existing) removeFilter();
+      closeStats();
+      statsPath = `@tmp/audio-stats-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`;
+      file.write(statsPath, "");
+      stats = file.handle(statsPath, "read");
+      if (!stats) throw new Error("\u65E0\u6CD5\u6253\u5F00\u97F3\u9891\u7EDF\u8BA1\u6587\u4EF6");
+      mpv.command("af", ["add", timingFilter(utils.resolvePath(statsPath))]);
       const added = mpv.getNative("af") || [];
       filterError = added.some((filter) => filter.label === FILTER_LABEL) ? "" : "\u97F3\u9891\u7EDF\u8BA1\u6EE4\u955C\u6302\u8F7D\u5931\u8D25\uFF0C\u8BF7\u67E5\u770B\u63D2\u4EF6\u5F00\u53D1\u8005\u5DE5\u5177";
     } catch (error) {
@@ -66,6 +159,29 @@
   function removeFilter() {
     const filters = mpv.getNative("af") || [];
     if (filters.some((filter) => filter.label === FILTER_LABEL)) mpv.command("af", ["remove", `@${FILTER_LABEL}`]);
+  }
+  function readStats(sampleRate) {
+    if (!stats) return;
+    const offset = stats.offset();
+    stats.seekToEnd();
+    const end = stats.offset();
+    if (end < offset) {
+      timeline.reset();
+      stats.seekTo(0);
+    } else stats.seekTo(offset);
+    if (end > 32 * 1024 * 1024) {
+      removeFilter();
+      closeStats();
+      lastFilterAttempt = -Infinity;
+      installFilter();
+      return;
+    }
+    for (let count = 0; count < 32; count++) {
+      const bytes = stats.read(8192);
+      if (!bytes?.length) break;
+      timeline.append(String.fromCharCode(...bytes), sampleRate);
+      if (bytes.length < 8192) break;
+    }
   }
   function publish(reasonOverride) {
     if (!capturing) return;
@@ -88,14 +204,42 @@
       if (!params?.samplerate) sample.reason = "\u5F53\u524D\u97F3\u8F68\u672A\u63D0\u4F9B PCM \u97F3\u9891\uFF0C\u8BF7\u68C0\u67E5\u97F3\u8F68\u9009\u62E9\u4E0E\u97F3\u9891\u76F4\u901A\u8BBE\u7F6E";
       else {
         installFilter();
-        const features = readFeatures(mpv.getNative(`af-metadata/${FILTER_LABEL}`), params.samplerate);
-        if (!filterError && features) Object.assign(sample, features, { running: true });
-        else sample.reason = filterError || "\u6B63\u5728\u7B49\u5F85\u97F3\u9891\u7EDF\u8BA1\uFF0C\u8BF7\u4FDD\u6301\u64AD\u653E";
+        try {
+          const audioPosition = mpv.getNative("audio-pts");
+          if (typeof audioPosition !== "number" || !Number.isFinite(audioPosition)) {
+            sample.reason = "\u6B63\u5728\u7B49\u5F85\u97F3\u9891\u64AD\u653E\u65F6\u949F";
+            hub.postMessage("audio", sample);
+            return;
+          }
+          const saved = preferences.get("settings");
+          const advance = typeof saved?.advanceMs === "number" && Number.isFinite(saved.advanceMs) ? Math.max(0, Math.min(1e3, saved.advanceMs)) : 0;
+          if (audioBuffer.update(advance)) {
+            timeline.reset();
+            stats?.seekToEnd();
+            sample.reason = "\u6B63\u5728\u8C03\u6574\u97F3\u9891\u9884\u8BFB\u7F13\u51B2";
+            hub.postMessage("audio", sample);
+            return;
+          }
+          readStats(params.samplerate);
+          const speed = mpv.getNumber("speed");
+          const features = speed > 0 ? timeline.at(audioPosition, advance, speed) : null;
+          if (!filterError && features) Object.assign(sample, features, { running: true });
+          else sample.reason = filterError || (advance > 0 ? "\u97F3\u9891\u9884\u8BFB\u4E0D\u8DB3\uFF0C\u8BF7\u51CF\u5C0F\u63D0\u524D\u91CF\u6216\u7B49\u5F85\u7F13\u51B2" : "\u6B63\u5728\u7B49\u5F85\u97F3\u9891\u7EDF\u8BA1\uFF0C\u8BF7\u4FDD\u6301\u64AD\u653E");
+        } catch (error) {
+          sample.reason = `\u65E0\u6CD5\u8BFB\u53D6\u97F3\u9891\u7EDF\u8BA1\uFF1A${String(error)}`;
+        }
       }
     }
     hub.postMessage("audio", sample);
   }
   function capture(enabled) {
+    if (capturing === enabled) {
+      if (enabled) {
+        installFilter();
+        publish();
+      }
+      return;
+    }
     capturing = enabled;
     lastPosition = -1;
     lastProgressAt = Date.now();
@@ -103,7 +247,11 @@
     if (enabled) {
       installFilter();
       publish();
-    } else removeFilter();
+    } else {
+      removeFilter();
+      closeStats();
+      audioBuffer.restore();
+    }
   }
   hub.onMessage("capture", ({ enabled }) => capture(enabled));
   menu.addItem(menu.item("\u6253\u5F00\u97F3\u9891\u8054\u52A8\uFF08\u4F7F\u7528\u5F53\u524D\u7A97\u53E3\uFF09", () => {
@@ -115,12 +263,16 @@
     if (!capturing) return;
     hub.postMessage("source-reset", { reason: "\u5A92\u4F53\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8" });
     seekUntil = Date.now() + 250;
+    removeFilter();
+    closeStats();
     lastFilterAttempt = -Infinity;
     installFilter();
     publish();
   });
   event.on("mpv.seek", () => {
     seekUntil = Date.now() + 250;
+    timeline.reset();
+    stats?.seekToEnd();
     publish("\u6B63\u5728\u5B9A\u4F4D");
   });
   event.on("mpv.playback-restart", () => {
@@ -130,10 +282,14 @@
     if (!capturing) return;
     publish("\u64AD\u653E\u5DF2\u7ED3\u675F");
     hub.postMessage("source-reset", { reason: "\u64AD\u653E\u5DF2\u7ED3\u675F" });
+    removeFilter();
+    closeStats();
+    audioBuffer.restore();
   });
   event.on("mpv.shutdown", () => {
     if (capturing) hub.postMessage("source-reset", { reason: "\u64AD\u653E\u7A97\u53E3\u5DF2\u5173\u95ED" });
     capturing = false;
+    closeStats();
   });
   setInterval(() => publish(), SAMPLE_MS);
 })();

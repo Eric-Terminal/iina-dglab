@@ -12,7 +12,7 @@ let windowWasOpen = false;
 let settings: Settings = { ...DEFAULT_SETTINGS };
 try {
   const stored = preferences.get('settings');
-  if (stored) settings = validateSettings(stored);
+  if (stored) settings = validateSettings({ ...DEFAULT_SETTINGS, ...stored });
 } catch { log.warn('已忽略无效的已保存参数。'); }
 const savedServer = preferences.get('server');
 let server = typeof savedServer === 'string' ? savedServer : OFFICIAL_SERVER;
@@ -30,7 +30,11 @@ function initializeUI(): void {
   if (lastSample && Date.now() - lastSample.at <= STALE_MS) window.postMessage('audio', lastSample);
 }
 
-function open(): void { window.open(); if (uiReady) initializeUI(); }
+function open(): void {
+  window.open();
+  if (selectedPlayer) hub.postMessage(selectedPlayer, 'capture', { enabled: true });
+  if (uiReady) initializeUI();
+}
 function stop(reason: string): void { window.postMessage('stop', { reason }); }
 
 menu.addItem(menu.item('打开音频联动控制台', open));
@@ -95,6 +99,8 @@ setInterval(() => {
   const visible = windowAPI.isOpen?.() ?? false;
   if (windowWasOpen && !visible) {
     window.postMessage('disconnect', { reason: '控制窗口已关闭' });
+    if (selectedPlayer) hub.postMessage(selectedPlayer, 'capture', { enabled: false });
+    lastSample = undefined;
     const generation = ++relayGeneration;
     // 先给 WebView 清理设备任务的机会；后台停止回调失效时，租约仍会关闭中继。
     setTimeout(() => { if (generation === relayGeneration) void relay.stop(); }, 1500);

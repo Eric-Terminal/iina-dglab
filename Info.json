@@ -1,11 +1,11 @@
 {
   "name": "郊狼音频联动",
   "identifier": "io.github.eric-terminal.iina-dglab",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "将当前播放音频的响度与过零率映射到 DG-LAB 4 的郊狼波形。",
   "author": { "name": "Eric-Terminal", "url": "https://github.com/Eric-Terminal" },
   "ghRepo": "Eric-Terminal/iina-dglab",
-  "ghVersion": 3,
+  "ghVersion": 4,
   "entry": "dist/main.js",
   "globalEntry": "dist/global.js",
   "permissions": ["network-request", "file-system"],

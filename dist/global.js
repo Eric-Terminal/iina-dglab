@@ -4,8 +4,10 @@
   var STALE_MS = 350;
   var OFFICIAL_SERVER = "wss://trex.dungeon-lab.cn/v4";
   var FILTER_LABEL = "iina_dglab";
-  var AUDIO_FILTER = `@${FILTER_LABEL}:lavfi=[astats=metadata=1:reset=1:measure_perchannel=RMS_level+Peak_level+Zero_crossings_rate:measure_overall=RMS_level+Peak_level]`;
+  var ASTATS_FILTER = "astats=metadata=1:reset=1:measure_perchannel=RMS_level+Peak_level+Zero_crossings_rate:measure_overall=RMS_level+Peak_level";
+  var AUDIO_FILTER = `@${FILTER_LABEL}:lavfi=[${ASTATS_FILTER}]`;
   var DEFAULT_SETTINGS = {
+    advanceMs: 0,
     metric: "hybrid",
     adaptiveGate: true,
     gateDb: -38,
@@ -25,6 +27,7 @@
     if (!value || typeof value !== "object") throw new Error("\u53C2\u6570\u683C\u5F0F\u65E0\u6548\u3002");
     const s = value;
     const ranges = [
+      ["advanceMs", 0, 1e3],
       ["gateDb", -90, -1],
       ["ceilingDb", -60, 0],
       ["gamma", 0.2, 3],
@@ -125,7 +128,7 @@
   var settings = { ...DEFAULT_SETTINGS };
   try {
     const stored = preferences.get("settings");
-    if (stored) settings = validateSettings(stored);
+    if (stored) settings = validateSettings({ ...DEFAULT_SETTINGS, ...stored });
   } catch {
     log.warn("\u5DF2\u5FFD\u7565\u65E0\u6548\u7684\u5DF2\u4FDD\u5B58\u53C2\u6570\u3002");
   }
@@ -144,6 +147,7 @@
   }
   function open() {
     window.open();
+    if (selectedPlayer) hub.postMessage(selectedPlayer, "capture", { enabled: true });
     if (uiReady) initializeUI();
   }
   function stop(reason) {
@@ -219,6 +223,8 @@
     const visible = windowAPI.isOpen?.() ?? false;
     if (windowWasOpen && !visible) {
       window.postMessage("disconnect", { reason: "\u63A7\u5236\u7A97\u53E3\u5DF2\u5173\u95ED" });
+      if (selectedPlayer) hub.postMessage(selectedPlayer, "capture", { enabled: false });
+      lastSample = void 0;
       const generation = ++relayGeneration;
       setTimeout(() => {
         if (generation === relayGeneration) void relay.stop();

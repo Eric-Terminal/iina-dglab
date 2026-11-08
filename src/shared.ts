@@ -3,9 +3,11 @@ export const STALE_MS = 350;
 export const OFFICIAL_SERVER = 'wss://trex.dungeon-lab.cn/v4';
 export const FILTER_LABEL = 'iina_dglab';
 // ZCR 没有 Overall 字段，必须启用逐通道统计；不重采样、不改变声道布局。
-export const AUDIO_FILTER = `@${FILTER_LABEL}:lavfi=[astats=metadata=1:reset=1:measure_perchannel=RMS_level+Peak_level+Zero_crossings_rate:measure_overall=RMS_level+Peak_level]`;
+export const ASTATS_FILTER = 'astats=metadata=1:reset=1:measure_perchannel=RMS_level+Peak_level+Zero_crossings_rate:measure_overall=RMS_level+Peak_level';
+export const AUDIO_FILTER = `@${FILTER_LABEL}:lavfi=[${ASTATS_FILTER}]`;
 
 export interface Settings {
+  advanceMs: number;
   metric: 'hybrid' | 'rms' | 'peak';
   adaptiveGate: boolean;
   gateDb: number;
@@ -23,6 +25,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  advanceMs: 0,
   metric: 'hybrid', adaptiveGate: true, gateDb: -38, ceilingDb: -5, gamma: 1.1,
   zcrLow: 0.02, zcrHigh: 0.22, frequencyLow: 10, frequencyHigh: 100,
   modulationMax: 100, capA: 0, capB: 0, channelA: true, channelB: true,
@@ -32,6 +35,7 @@ export function validateSettings(value: unknown): Settings {
   if (!value || typeof value !== 'object') throw new Error('参数格式无效。');
   const s = value as Settings;
   const ranges: [keyof Settings, number, number][] = [
+    ['advanceMs', 0, 1000],
     ['gateDb', -90, -1], ['ceilingDb', -60, 0], ['gamma', 0.2, 3],
     ['zcrLow', 0, 1], ['zcrHigh', 0, 1], ['frequencyLow', 10, 100],
     ['frequencyHigh', 10, 100], ['modulationMax', 0, 100], ['capA', 0, 200], ['capB', 0, 200],
