@@ -51,6 +51,68 @@
     return { ...s, capA: Math.floor(s.capA), capB: Math.floor(s.capB) };
   }
 
+  // src/local-relay.ts
+  var LocalRelay = class {
+    constructor(api) {
+      this.api = api;
+      this.info = null;
+      this.starting = null;
+      this.generation = 0;
+      this.keepingAlive = false;
+    }
+    start(nodePath2, scriptPath) {
+      if (this.info) return Promise.resolve(this.info.url);
+      if (this.starting) return this.starting;
+      const generation = ++this.generation;
+      const attempt = async () => {
+        const candidates = nodePath2.trim() ? [nodePath2.trim()] : ["/opt/homebrew/bin/node", "/usr/local/bin/node"];
+        const node = candidates.find((path) => path.startsWith("/") && this.api.utils.fileInPath(path));
+        if (!node) throw new Error("\u672A\u627E\u5230 Node.js\u3002\u8BF7\u5B89\u88C5 Node.js 22+\uFF0C\u6216\u5728\u8FDE\u63A5\u8BBE\u7F6E\u4E2D\u586B\u5199 node \u7684\u7EDD\u5BF9\u8DEF\u5F84\u3002");
+        if (!scriptPath.startsWith("/") || !scriptPath.endsWith("/dist/relay.cjs") || !this.api.utils.fileInPath(scriptPath)) {
+          throw new Error("\u627E\u4E0D\u5230\u63D2\u4EF6\u5185\u7684\u672C\u5730\u4E2D\u7EE7\u7A0B\u5E8F\uFF0C\u8BF7\u91CD\u65B0\u5B89\u88C5\u63D2\u4EF6\u3002");
+        }
+        const result = await this.api.utils.exec(node, [scriptPath, "--launch"]);
+        if (result.status !== 0) throw new Error(result.stderr.trim() || "\u672C\u5730\u4E2D\u7EE7\u542F\u52A8\u5931\u8D25\u3002");
+        const info = JSON.parse(result.stdout.trim());
+        if (!/^ws:\/\/127\.0\.0\.1:\d+\/v4\?key=[a-f0-9]+$/.test(info.url)) throw new Error("\u672C\u5730\u4E2D\u7EE7\u8FD4\u56DE\u4E86\u65E0\u6548\u7684\u8FDE\u63A5\u5730\u5740\u3002");
+        if (generation !== this.generation) {
+          await this.post(info.shutdownUrl);
+          throw new Error("\u672C\u5730\u4E2D\u7EE7\u542F\u52A8\u5DF2\u53D6\u6D88\u3002");
+        }
+        this.info = info;
+        return info.url;
+      };
+      this.starting = attempt().finally(() => {
+        this.starting = null;
+      });
+      return this.starting;
+    }
+    async stop() {
+      this.generation++;
+      const info = this.info;
+      this.info = null;
+      if (info) {
+        try {
+          await this.post(info.shutdownUrl);
+        } catch {
+        }
+      }
+    }
+    async keepAlive() {
+      if (!this.info || this.keepingAlive) return;
+      this.keepingAlive = true;
+      try {
+        await this.post(this.info.leaseUrl);
+      } finally {
+        this.keepingAlive = false;
+      }
+    }
+    async post(url) {
+      const response = await this.api.http.post(url, { headers: {}, params: {}, data: {} });
+      if (response.statusCode !== 204) throw new Error("\u672C\u5730\u4E2D\u7EE7\u5DF2\u5931\u53BB\u54CD\u5E94\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5\u3002");
+    }
+  };
+
   // src/global.ts
   var { global: hub, standaloneWindow: window, menu, preferences, console: log } = iina;
   var windowAPI = window;
@@ -69,11 +131,15 @@
   }
   var savedServer = preferences.get("server");
   var server = typeof savedServer === "string" ? savedServer : OFFICIAL_SERVER;
+  var connectionMode = preferences.get("connectionMode") === "remote" ? "remote" : "local";
+  var nodePath = String(preferences.get("nodePath") || "");
+  var relay = new LocalRelay(iina);
+  var relayGeneration = 0;
   window.loadFile("dist/ui.html");
   window.setProperty({ title: "\u97F3\u9891\u8054\u52A8", resizable: true });
   window.setFrame(820, 840);
   function initializeUI() {
-    window.postMessage("init", { settings, server, sourceTitle, hasSource: !!selectedPlayer, supportsWindowTracking });
+    window.postMessage("init", { settings, server, connectionMode, nodePath, sourceTitle, hasSource: !!selectedPlayer, supportsWindowTracking });
     if (lastSample && Date.now() - lastSample.at <= STALE_MS) window.postMessage("audio", lastSample);
   }
   function open() {
@@ -88,11 +154,10 @@
   hub.onMessage("select-source", (data, player) => {
     if (!player) return;
     stop("\u97F3\u6E90\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8");
-    hub.postMessage(null, "capture", { enabled: false });
+    if (selectedPlayer && selectedPlayer !== player) hub.postMessage(selectedPlayer, "capture", { enabled: false });
     selectedPlayer = player;
     sourceTitle = data.title;
     lastSample = void 0;
-    hub.postMessage(player, "capture", { enabled: true });
     open();
   });
   hub.onMessage("audio", (sample, player) => {
@@ -118,14 +183,47 @@
       server = data.server;
       preferences.set("settings", settings);
       preferences.set("server", server);
+      connectionMode = data.connectionMode === "remote" ? "remote" : "local";
+      nodePath = data.nodePath.trim();
+      preferences.set("connectionMode", connectionMode);
+      preferences.set("nodePath", nodePath);
       preferences.sync();
     } catch (error) {
       window.postMessage("error", { message: String(error) });
     }
   });
+  window.onMessage("local-start", async (data) => {
+    const generation = ++relayGeneration;
+    try {
+      const url = await relay.start(data.nodePath, data.scriptPath);
+      if (generation === relayGeneration) window.postMessage("local-result", { url });
+    } catch (error) {
+      if (generation === relayGeneration) window.postMessage("local-result", { error: String(error) });
+    }
+  });
+  window.onMessage("local-stop", () => {
+    relayGeneration++;
+    void relay.stop();
+  });
+  setInterval(() => {
+    const generation = relayGeneration;
+    if (!windowAPI.isOpen?.()) return;
+    void relay.keepAlive().catch(() => {
+      if (generation !== relayGeneration) return;
+      relayGeneration++;
+      window.postMessage("disconnect", { reason: "\u672C\u5730\u4E2D\u7EE7\u5DF2\u5931\u53BB\u54CD\u5E94\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5" });
+      void relay.stop();
+    });
+  }, 2e3);
   setInterval(() => {
     const visible = windowAPI.isOpen?.() ?? false;
-    if (windowWasOpen && !visible) stop("\u63A7\u5236\u7A97\u53E3\u5DF2\u5173\u95ED");
+    if (windowWasOpen && !visible) {
+      window.postMessage("disconnect", { reason: "\u63A7\u5236\u7A97\u53E3\u5DF2\u5173\u95ED" });
+      const generation = ++relayGeneration;
+      setTimeout(() => {
+        if (generation === relayGeneration) void relay.stop();
+      }, 1500);
+    }
     windowWasOpen = visible;
     if (lastSample && Date.now() - lastSample.at > STALE_MS) {
       lastSample = void 0;

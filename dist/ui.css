@@ -51,6 +51,9 @@ kbd { font:10px -apple-system,sans-serif; opacity:.65; margin-left:8px; }
 .footnote { font-size:10px; margin-top:11px; }
 .error { color:var(--danger); overflow-wrap:anywhere; }
 .pair-grid { display:grid; grid-template-columns:172px 1fr; align-items:center; gap:16px; }
+.pair-grid.local { grid-template-columns:1fr; }
+#connection-mode { margin-bottom:12px; }
+#signal-state { text-align:right; max-width:70%; }
 #qr { max-width:172px; height:auto!important; border-radius:6px; }
 .copy-row { display:flex; align-items:center; gap:6px; }
 .copy-row button { margin-top:5px; }

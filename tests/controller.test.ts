@@ -66,7 +66,17 @@ test('没有上限快照、强度全零或没有新鲜音频时拒绝开始', as
   s.controller.setTarget(target); s.controller.configure({ ...DEFAULT_SETTINGS });
   await assert.rejects(s.controller.start(), /强度上限/);
   s.controller.configure({ ...DEFAULT_SETTINGS, capA: 10 }); s.advance(500);
-  await assert.rejects(s.controller.start(), /音轨/);
+  await assert.rejects(s.controller.start(), /采样已中断/);
+});
+test('未取得音频时反馈实际原因，而不是误报媒体没有音轨', async () => {
+  const s = setup();
+  s.controller.sample = null;
+  await assert.rejects(s.controller.start(), /尚未收到音源采样/);
+  s.controller.accept(sample(s.now(), { running: false, reason: '播放已暂停' }));
+  await assert.rejects(s.controller.start(), /播放已暂停/);
+  s.controller.accept(sample(s.now(), { running: false, reason: '音频统计滤镜挂载失败' }));
+  await assert.rejects(s.controller.start(), /滤镜挂载失败/);
+  assert.equal(s.calls.length, 0);
 });
 test('App 响应慢时丢弃采样，不累计波形或补发历史帧', async () => {
   const s = setup(); let release!: () => void;

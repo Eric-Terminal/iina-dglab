@@ -3546,7 +3546,11 @@
         this.busy = false;
         if (this.stopFailed) throw new Error("\u4E0A\u6B21\u505C\u6B62\u64CD\u4F5C\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u68C0\u67E5 App \u540E\u65AD\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5\u3002");
         if (!this.target || !isConnected(this.target)) throw new Error("\u8BF7\u5148\u8FDE\u63A5 App \u5E76\u9009\u62E9\u5728\u7EBF\u7684\u90CA\u72FC 3.0\u3002");
-        if (!this.isFresh()) throw new Error("\u8BF7\u5148\u5728\u6240\u9009 IINA \u7A97\u53E3\u64AD\u653E\u5E26\u97F3\u8F68\u7684\u5A92\u4F53\u3002");
+        if (!this.isFresh()) {
+          if (!this.sample) throw new Error("\u5C1A\u672A\u6536\u5230\u97F3\u6E90\u91C7\u6837\uFF0C\u8BF7\u4ECE\u64AD\u653E\u7A97\u53E3\u7684\u63D2\u4EF6\u83DC\u5355\u91CD\u65B0\u9009\u62E9\u97F3\u6E90\u3002");
+          if (this.now() - this.sample.at > STALE_MS) throw new Error("\u97F3\u9891\u91C7\u6837\u5DF2\u4E2D\u65AD\uFF0C\u8BF7\u4ECE\u64AD\u653E\u7A97\u53E3\u91CD\u65B0\u6253\u5F00\u8054\u52A8\u63A7\u5236\u53F0\u3002");
+          throw new Error(this.sample.reason || "\u97F3\u9891\u7EDF\u8BA1\u5C1A\u672A\u5C31\u7EEA\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002");
+        }
         if (!this.channels().length) throw new Error("\u8BF7\u8BBE\u7F6E\u81F3\u5C11\u4E00\u4E2A\u901A\u9053\u7684\u5F3A\u5EA6\u4E0A\u9650\uFF0C\u5E76\u786E\u8BA4 App \u5DF2\u56DE\u4F20\u975E\u96F6\u4E0A\u9650\u3002");
         this.armed = true;
         this.reason = "\u8054\u52A8\u5DF2\u5C31\u7EEA";
@@ -3662,6 +3666,8 @@
   var $ = (id) => document.getElementById(id);
   var form = $("settings");
   var serverInput = $("server");
+  var modeInput = $("connection-mode");
+  var nodeInput = $("node-path");
   var deviceSelect = $("device");
   var socket = new DglabSocket({ url: OFFICIAL_SERVER, responseTimeout: 800 });
   var targets = [];
@@ -3670,6 +3676,9 @@
   var hasSource = false;
   var supportsWindowTracking = false;
   var connecting = false;
+  var disconnecting = false;
+  var connectionGeneration = 0;
+  var localResult;
   var samples = [];
   var transport = {
     sendPulse: (...args) => socket.sendPulse(...args),
@@ -3707,54 +3716,102 @@
     }
     return url.toString();
   }
-  async function connect() {
-    if (connecting) return;
-    if (socketState === "paired" || socketState === "waiting_for_peer") {
-      await controller.stop("\u5DF2\u65AD\u5F00\u8FDE\u63A5");
+  async function disconnect(reason) {
+    connectionGeneration++;
+    disconnecting = true;
+    localResult?.({ error: reason });
+    render();
+    try {
+      await controller.stop(reason);
+    } finally {
       socket.disconnect();
+      bridge?.postMessage("local-stop", {});
+      disconnecting = false;
+      render();
+    }
+  }
+  function startLocal() {
+    if (window.location.protocol !== "file:") return Promise.reject(new Error("\u8BF7\u5728 IINA \u63D2\u4EF6\u7A97\u53E3\u4E2D\u542F\u52A8\u672C\u673A\u4E2D\u7EE7\u3002"));
+    const scriptPath = decodeURIComponent(new URL("relay.cjs", window.location.href).pathname);
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        localResult = void 0;
+        bridge?.postMessage("local-stop", {});
+        reject(new Error("\u672C\u5730\u4E2D\u7EE7\u542F\u52A8\u8D85\u65F6\uFF0C\u8BF7\u68C0\u67E5 Node.js \u8DEF\u5F84\u3002"));
+      }, 1e4);
+      localResult = (data) => {
+        clearTimeout(timeout);
+        localResult = void 0;
+        if (data.url) resolve(data.url);
+        else reject(new Error(data.error || "\u672C\u5730\u4E2D\u7EE7\u542F\u52A8\u5931\u8D25\u3002"));
+      };
+      bridge?.postMessage("local-start", { nodePath: nodeInput.value.trim(), scriptPath });
+    });
+  }
+  async function connect() {
+    if (connecting || disconnecting) return;
+    if (socketState === "paired" || socketState === "waiting_for_peer") {
+      await disconnect("\u5DF2\u65AD\u5F00\u8FDE\u63A5");
       return;
     }
-    const url = validateServer(serverInput.value);
+    const generation = ++connectionGeneration;
+    const local = modeInput.value === "local";
     connecting = true;
     $("error").hidden = true;
     render();
     socket.disconnect();
-    const current = new DglabSocket({ url, connectTimeout: 8e3, responseTimeout: 800 });
-    socket = current;
-    current.on("state", (state) => {
-      if (current !== socket) return;
-      socketState = state;
-      if (state === "disconnected" || state === "idle") {
-        void controller.stop("\u8FDE\u63A5\u5DF2\u65AD\u5F00\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5\u5E76\u5F00\u59CB\u8054\u52A8");
-        controller.setTarget(null);
-        targets = [];
-        $("pairing").hidden = true;
-        deviceSelect.replaceChildren(new Option("\u7B49\u5F85 App \u8FDE\u63A5", ""));
-      }
-      render();
-    });
-    current.on("devices", () => {
-      if (current === socket) updateDevices();
-    });
-    current.on("client-disconnected", () => {
-      if (current === socket) updateDevices();
-    });
-    current.on("error", (error) => {
-      if (current !== socket) return;
-      void controller.stop("\u8FDE\u63A5\u53D1\u751F\u9519\u8BEF\uFF0C\u8BF7\u68C0\u67E5 App");
-      showError(error);
-    });
     try {
+      const url = local ? await startLocal() : validateServer(serverInput.value);
+      if (generation !== connectionGeneration) return;
+      const current = new DglabSocket({ url, connectTimeout: 8e3, responseTimeout: 800 });
+      socket = current;
+      current.on("state", (state) => {
+        if (current !== socket) return;
+        socketState = state;
+        if (state === "disconnected" || state === "idle") {
+          if (local) bridge?.postMessage("local-stop", {});
+          void controller.stop("\u8FDE\u63A5\u5DF2\u65AD\u5F00\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5\u5E76\u5F00\u59CB\u8054\u52A8");
+          controller.setTarget(null);
+          targets = [];
+          $("pairing").hidden = true;
+          deviceSelect.replaceChildren(new Option("\u7B49\u5F85 App \u8FDE\u63A5", ""));
+        }
+        render();
+      });
+      current.on("devices", () => {
+        if (current === socket) updateDevices();
+      });
+      current.on("client-disconnected", () => {
+        if (current === socket) updateDevices();
+      });
+      current.on("error", (error) => {
+        if (current !== socket) return;
+        void controller.stop("\u8FDE\u63A5\u53D1\u751F\u9519\u8BEF\uFF0C\u8BF7\u68C0\u67E5 App");
+        showError(error);
+      });
       const { targetId } = await current.connect();
-      if (current !== socket) return;
+      if (current !== socket || generation !== connectionGeneration) return;
       const appUrl = new URL(url);
       appUrl.searchParams.set("tid", targetId);
-      const pairing = `https://dungeon-lab.cn/s/?v=1&action=socket&url=${encodeURIComponent(appUrl.toString())}`;
       $("pair-url").value = appUrl.toString();
-      await import_qrcode.default.toCanvas($("qr"), pairing, { width: 172, margin: 3, errorCorrectionLevel: "M" });
+      $("qr").hidden = local;
+      $("pair-grid").classList.toggle("local", local);
+      $("pairing-title").textContent = local ? "\u672C\u673A\u8FDE\u63A5\u5730\u5740" : "\u914D\u5BF9\u4E8C\u7EF4\u7801\u4E0E\u8FDE\u63A5\u5730\u5740";
+      $("pairing-hint").textContent = local ? "\u590D\u5236\u4E0B\u65B9\u5730\u5740\u5230\u540C\u4E00\u53F0 Mac \u7684 App\u3002\u91CD\u65B0\u8FDE\u63A5\u540E\u9700\u4F7F\u7528\u65B0\u5730\u5740\u3002" : "\u624B\u673A\u53EF\u626B\u7801\uFF1B\u684C\u9762 App \u53EF\u590D\u5236\u4E0B\u65B9\u5730\u5740\u3002";
+      if (!local) {
+        const pairing = `https://dungeon-lab.cn/s/?v=1&action=socket&url=${encodeURIComponent(appUrl.toString())}`;
+        await import_qrcode.default.toCanvas($("qr"), pairing, { width: 172, margin: 3, errorCorrectionLevel: "M" });
+      }
+      if (generation !== connectionGeneration) return;
       $("pairing").hidden = false;
       $("pairing").open = true;
       save();
+    } catch (error) {
+      if (generation === connectionGeneration) {
+        socket.disconnect();
+        if (local) bridge?.postMessage("local-stop", {});
+        throw error;
+      }
     } finally {
       connecting = false;
       render();
@@ -3778,18 +3835,22 @@
     return validateSettings(result);
   }
   function save() {
-    bridge?.postMessage("save", { settings: controller.settings, server: serverInput.value.trim() });
+    bridge?.postMessage("save", { settings: controller.settings, server: serverInput.value.trim(), connectionMode: modeInput.value, nodePath: nodeInput.value.trim() });
   }
   function render() {
     const states = { idle: "\u672A\u8FDE\u63A5", connecting: "\u6B63\u5728\u8FDE\u63A5", waiting_for_peer: "\u7B49\u5F85 App \u914D\u5BF9", paired: "App \u5DF2\u8FDE\u63A5", disconnected: "\u8FDE\u63A5\u5DF2\u65AD\u5F00" };
     $("connection-state").textContent = states[socketState] || socketState;
     $("connection-state").classList.toggle("connected", socketState === "paired");
     $("connect").textContent = connecting ? "\u8FDE\u63A5\u4E2D\u2026" : ["paired", "waiting_for_peer"].includes(socketState) ? "\u65AD\u5F00\u8FDE\u63A5" : "\u8FDE\u63A5 App";
-    $("connect").disabled = connecting;
-    serverInput.disabled = connecting || ["paired", "waiting_for_peer"].includes(socketState);
+    $("connect").disabled = connecting || disconnecting;
+    serverInput.disabled = modeInput.disabled = nodeInput.disabled = connecting || disconnecting || ["paired", "waiting_for_peer"].includes(socketState);
+    const local = modeInput.value === "local";
+    $("local-settings").hidden = !local;
+    $("remote-settings").hidden = local;
+    $("connection-hint").textContent = local ? "\u8FDE\u63A5\u540E\uFF0C\u5C06 Socket \u5730\u5740\u7C98\u8D34\u5230\u540C\u4E00\u53F0 Mac \u7684\u5B98\u65B9 App\u3002" : "\u8FDE\u63A5\u540E\uFF0C\u7528\u5B98\u65B9 App \u7684 Socket \u63A7\u5236\u626B\u7801\u6216\u7C98\u8D34\u5730\u5740\u914D\u5BF9\u3002";
     $("dirty").textContent = dirty ? "\u4FEE\u6539\u5C1A\u672A\u5E94\u7528" : "\u53C2\u6570\u5DF2\u5E94\u7528";
     $("status").textContent = controller.reason;
-    $("start").disabled = controller.armed || controller.starting || !controller.target || !hasSource || !supportsWindowTracking || dirty;
+    $("start").disabled = controller.armed || controller.starting || connecting || disconnecting || !controller.target || !hasSource || !supportsWindowTracking || dirty;
     $("start").textContent = controller.armed ? "\u8054\u52A8\u5DF2\u5F00\u542F" : controller.starting ? "\u6B63\u5728\u51C6\u5907\u2026" : "\u5F00\u59CB\u8054\u52A8";
     const sample = controller.sample;
     const number = (n, digits = 1) => typeof n === "number" && Number.isFinite(n) ? Math.max(-99, n).toFixed(digits) : "\u2014";
@@ -3797,7 +3858,7 @@
     $("peak").textContent = number(sample?.peakDb);
     $("zcr").textContent = number(sample?.zcr, 3);
     $("amplitude").textContent = String(controller.wave?.intensity || 0);
-    $("signal-state").textContent = sample?.running ? `\u95E8\u9650 ${number(controller.wave?.gateDb)} dBFS \xB7 ${controller.wave?.gated ? "\u5173\u95ED" : "\u901A\u8FC7"}` : "\u7B49\u5F85\u97F3\u9891";
+    $("signal-state").textContent = sample?.running ? `\u95E8\u9650 ${number(controller.wave?.gateDb)} dBFS \xB7 ${controller.wave?.gated ? "\u5173\u95ED" : "\u901A\u8FC7"}` : sample?.reason || "\u7B49\u5F85\u97F3\u9891";
     if (sample) $("source").textContent = sample.title;
     for (const [channel, id] of [[0, "channel-a"], [1, "channel-b"]]) {
       $(id).textContent = controller.target ? `App \u5F53\u524D ${number(Number(controller.target.device.props?.[channel === 0 ? "intensityA" : "intensityB"]), 0)} / \u4E0A\u9650 ${channelLimit(controller.target, channel)}` : "\u7B49\u5F85 App \u56DE\u4F20\u4E0A\u9650";
@@ -3836,6 +3897,10 @@
   }
   $("connect").addEventListener("click", () => {
     void connect().catch(showError);
+  });
+  modeInput.addEventListener("change", () => {
+    render();
+    save();
   });
   $("copy").addEventListener("click", async () => {
     const input = $("pair-url");
@@ -3879,7 +3944,7 @@
     }
   });
   window.addEventListener("pagehide", () => {
-    void controller.stop("\u63A7\u5236\u7A97\u53E3\u5DF2\u5173\u95ED");
+    void disconnect("\u63A7\u5236\u7A97\u53E3\u5DF2\u5173\u95ED");
   });
   setInterval(() => controller.watchdog(), 100);
   populate(DEFAULT_SETTINGS);
@@ -3889,7 +3954,11 @@
         controller.configure(data.settings);
         populate(data.settings);
       }
-      if (!connecting && !["paired", "waiting_for_peer"].includes(socketState)) serverInput.value = data.server;
+      if (!connecting && !["paired", "waiting_for_peer"].includes(socketState)) {
+        serverInput.value = data.server;
+        modeInput.value = data.connectionMode === "remote" ? "remote" : "local";
+        nodeInput.value = data.nodePath || "";
+      }
       hasSource = data.hasSource;
       supportsWindowTracking = data.supportsWindowTracking;
       if (!supportsWindowTracking) showError("\u5F53\u524D IINA \u7F3A\u5C11\u63A7\u5236\u7A97\u53E3\u72B6\u6001\u63A5\u53E3\uFF0C\u8BF7\u5347\u7EA7 IINA \u540E\u4F7F\u7528\u8054\u52A8\u3002");
@@ -3905,6 +3974,10 @@
     });
     bridge.onMessage("stop", (data) => {
       void controller.stop(data.reason);
+    });
+    bridge.onMessage("local-result", (data) => localResult?.(data));
+    bridge.onMessage("disconnect", (data) => {
+      void disconnect(data.reason);
     });
     bridge.onMessage("error", (data) => showError(data.message));
     bridge.postMessage("ready");

@@ -6,12 +6,23 @@ let capturing = false;
 let seekUntil = 0;
 let lastPosition = -1;
 let lastProgressAt = 0;
+let lastFilterAttempt = -Infinity;
+let filterError = '';
 
 function installFilter(): void {
   if (!capturing || core.status.idle) return;
-  const filters = mpv.getNative<{ label?: string }[]>('af') || [];
-  // 用标签操作自己的滤镜，保留均衡器、响度标准化等用户配置。
-  if (!filters.some(filter => filter.label === FILTER_LABEL)) mpv.command('af', ['add', AUDIO_FILTER]);
+  const filters = mpv.getNative<{ label?: string; enabled?: boolean }[]>('af') || [];
+  const existing = filters.find(filter => filter.label === FILTER_LABEL);
+  if (existing) { filterError = existing.enabled === false ? '音频统计滤镜被禁用，请在 IINA 中启用它' : ''; return; }
+  if (Date.now() - lastFilterAttempt < 1000) return;
+  lastFilterAttempt = Date.now();
+  try {
+    // 用标签操作自己的滤镜，保留均衡器、响度标准化等用户配置。
+    mpv.command('af', ['add', AUDIO_FILTER]);
+    // IINA 的 command 不返回 mpv 错误码，需回读确认挂载结果。
+    const added = mpv.getNative<{ label?: string }[]>('af') || [];
+    filterError = added.some(filter => filter.label === FILTER_LABEL) ? '' : '音频统计滤镜挂载失败，请查看插件开发者工具';
+  } catch (error) { filterError = `音频统计滤镜挂载失败：${String(error)}`; }
 }
 
 function removeFilter(): void {
@@ -22,38 +33,47 @@ function removeFilter(): void {
 function publish(reasonOverride?: string): void {
   if (!capturing) return;
   const at = Date.now();
-  const position = core.status.position;
-  if (position !== null && position !== lastPosition) {
+  const position = mpv.getNative<number | null>('time-pos');
+  if (typeof position === 'number' && position !== lastPosition) {
     lastPosition = position;
     lastProgressAt = at;
   }
   let reason = reasonOverride || '';
   if (!reason && core.status.idle) reason = '尚未播放媒体';
-  if (!reason && core.status.paused) reason = '播放已暂停';
+  if (!reason && mpv.getFlag('pause')) reason = '播放已暂停';
   if (!reason && (mpv.getFlag('mute') || mpv.getNumber('volume') <= 0)) reason = '播放器已静音';
   if (!reason && (mpv.getFlag('paused-for-cache') || mpv.getFlag('seeking') || at < seekUntil)) reason = '正在缓冲或定位';
   if (!reason && mpv.getFlag('eof-reached')) reason = '播放已结束';
-  if (!reason && (position === null || at - lastProgressAt > STALE_MS)) reason = '播放进度未更新';
+  if (!reason && (typeof position !== 'number' || at - lastProgressAt > STALE_MS)) reason = '播放进度未更新';
   const sample: AudioSample = { at, title: core.status.title || 'IINA', running: false, reason, rmsDb: null, peakDb: null, zcr: null };
   if (!reason) {
     const params = mpv.getNative<{ samplerate?: number }>('audio-params');
-    const features = readFeatures(mpv.getNative(`af-metadata/${FILTER_LABEL}`), params?.samplerate || 0);
-    if (features) Object.assign(sample, features, { running: true });
-    else sample.reason = '未取得音频统计，请确认媒体包含音轨并关闭音频直通';
+    if (!params?.samplerate) sample.reason = '当前音轨未提供 PCM 音频，请检查音轨选择与音频直通设置';
+    else {
+      // 换音轨或播放器重建滤镜链后，恢复自己的统计滤镜。
+      installFilter();
+      const features = readFeatures(mpv.getNative(`af-metadata/${FILTER_LABEL}`), params.samplerate);
+      if (!filterError && features) Object.assign(sample, features, { running: true });
+      else sample.reason = filterError || '正在等待音频统计，请保持播放';
+    }
   }
   hub.postMessage('audio', sample);
 }
 
-hub.onMessage('capture', ({ enabled }: { enabled: boolean }) => {
+function capture(enabled: boolean): void {
   capturing = enabled;
   lastPosition = -1;
   lastProgressAt = Date.now();
+  lastFilterAttempt = -Infinity;
   if (enabled) { installFilter(); publish(); }
   else removeFilter();
-});
+}
+hub.onMessage('capture', ({ enabled }: { enabled: boolean }) => capture(enabled));
 
 menu.addItem(menu.item('打开音频联动（使用当前窗口）', () => {
   hub.postMessage('select-source', { title: core.status.title || 'IINA' });
+  // 从用户选中的播放窗口直接启用采样，避免依赖跨上下文回传后才挂载滤镜。
+  capture(true);
 }));
 menu.addItem(menu.item('停止郊狼输出', () => hub.postMessage('emergency-stop', {}), { keyBinding: 'Ctrl+Alt+ESC' }));
 
@@ -61,6 +81,7 @@ event.on('iina.file-loaded', () => {
   if (!capturing) return;
   hub.postMessage('source-reset', { reason: '媒体已切换，请重新开始联动' });
   seekUntil = Date.now() + 250;
+  lastFilterAttempt = -Infinity;
   installFilter();
   publish();
 });

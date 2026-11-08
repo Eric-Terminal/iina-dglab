@@ -75,7 +75,11 @@ export class AudioController {
       this.busy = false;
       if (this.stopFailed) throw new Error('上次停止操作未获确认，请检查 App 后断开并重新连接。');
       if (!this.target || !isConnected(this.target)) throw new Error('请先连接 App 并选择在线的郊狼 3.0。');
-      if (!this.isFresh()) throw new Error('请先在所选 IINA 窗口播放带音轨的媒体。');
+      if (!this.isFresh()) {
+        if (!this.sample) throw new Error('尚未收到音源采样，请从播放窗口的插件菜单重新选择音源。');
+        if (this.now() - this.sample.at > STALE_MS) throw new Error('音频采样已中断，请从播放窗口重新打开联动控制台。');
+        throw new Error(this.sample.reason || '音频统计尚未就绪，请稍后重试。');
+      }
       if (!this.channels().length) throw new Error('请设置至少一个通道的强度上限，并确认 App 已回传非零上限。');
       this.armed = true;
       this.reason = '联动已就绪';

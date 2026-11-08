@@ -43,10 +43,25 @@
   var seekUntil = 0;
   var lastPosition = -1;
   var lastProgressAt = 0;
+  var lastFilterAttempt = -Infinity;
+  var filterError = "";
   function installFilter() {
     if (!capturing || core.status.idle) return;
     const filters = mpv.getNative("af") || [];
-    if (!filters.some((filter) => filter.label === FILTER_LABEL)) mpv.command("af", ["add", AUDIO_FILTER]);
+    const existing = filters.find((filter) => filter.label === FILTER_LABEL);
+    if (existing) {
+      filterError = existing.enabled === false ? "\u97F3\u9891\u7EDF\u8BA1\u6EE4\u955C\u88AB\u7981\u7528\uFF0C\u8BF7\u5728 IINA \u4E2D\u542F\u7528\u5B83" : "";
+      return;
+    }
+    if (Date.now() - lastFilterAttempt < 1e3) return;
+    lastFilterAttempt = Date.now();
+    try {
+      mpv.command("af", ["add", AUDIO_FILTER]);
+      const added = mpv.getNative("af") || [];
+      filterError = added.some((filter) => filter.label === FILTER_LABEL) ? "" : "\u97F3\u9891\u7EDF\u8BA1\u6EE4\u955C\u6302\u8F7D\u5931\u8D25\uFF0C\u8BF7\u67E5\u770B\u63D2\u4EF6\u5F00\u53D1\u8005\u5DE5\u5177";
+    } catch (error) {
+      filterError = `\u97F3\u9891\u7EDF\u8BA1\u6EE4\u955C\u6302\u8F7D\u5931\u8D25\uFF1A${String(error)}`;
+    }
   }
   function removeFilter() {
     const filters = mpv.getNative("af") || [];
@@ -55,44 +70,52 @@
   function publish(reasonOverride) {
     if (!capturing) return;
     const at = Date.now();
-    const position = core.status.position;
-    if (position !== null && position !== lastPosition) {
+    const position = mpv.getNative("time-pos");
+    if (typeof position === "number" && position !== lastPosition) {
       lastPosition = position;
       lastProgressAt = at;
     }
     let reason = reasonOverride || "";
     if (!reason && core.status.idle) reason = "\u5C1A\u672A\u64AD\u653E\u5A92\u4F53";
-    if (!reason && core.status.paused) reason = "\u64AD\u653E\u5DF2\u6682\u505C";
+    if (!reason && mpv.getFlag("pause")) reason = "\u64AD\u653E\u5DF2\u6682\u505C";
     if (!reason && (mpv.getFlag("mute") || mpv.getNumber("volume") <= 0)) reason = "\u64AD\u653E\u5668\u5DF2\u9759\u97F3";
     if (!reason && (mpv.getFlag("paused-for-cache") || mpv.getFlag("seeking") || at < seekUntil)) reason = "\u6B63\u5728\u7F13\u51B2\u6216\u5B9A\u4F4D";
     if (!reason && mpv.getFlag("eof-reached")) reason = "\u64AD\u653E\u5DF2\u7ED3\u675F";
-    if (!reason && (position === null || at - lastProgressAt > STALE_MS)) reason = "\u64AD\u653E\u8FDB\u5EA6\u672A\u66F4\u65B0";
+    if (!reason && (typeof position !== "number" || at - lastProgressAt > STALE_MS)) reason = "\u64AD\u653E\u8FDB\u5EA6\u672A\u66F4\u65B0";
     const sample = { at, title: core.status.title || "IINA", running: false, reason, rmsDb: null, peakDb: null, zcr: null };
     if (!reason) {
       const params = mpv.getNative("audio-params");
-      const features = readFeatures(mpv.getNative(`af-metadata/${FILTER_LABEL}`), params?.samplerate || 0);
-      if (features) Object.assign(sample, features, { running: true });
-      else sample.reason = "\u672A\u53D6\u5F97\u97F3\u9891\u7EDF\u8BA1\uFF0C\u8BF7\u786E\u8BA4\u5A92\u4F53\u5305\u542B\u97F3\u8F68\u5E76\u5173\u95ED\u97F3\u9891\u76F4\u901A";
+      if (!params?.samplerate) sample.reason = "\u5F53\u524D\u97F3\u8F68\u672A\u63D0\u4F9B PCM \u97F3\u9891\uFF0C\u8BF7\u68C0\u67E5\u97F3\u8F68\u9009\u62E9\u4E0E\u97F3\u9891\u76F4\u901A\u8BBE\u7F6E";
+      else {
+        installFilter();
+        const features = readFeatures(mpv.getNative(`af-metadata/${FILTER_LABEL}`), params.samplerate);
+        if (!filterError && features) Object.assign(sample, features, { running: true });
+        else sample.reason = filterError || "\u6B63\u5728\u7B49\u5F85\u97F3\u9891\u7EDF\u8BA1\uFF0C\u8BF7\u4FDD\u6301\u64AD\u653E";
+      }
     }
     hub.postMessage("audio", sample);
   }
-  hub.onMessage("capture", ({ enabled }) => {
+  function capture(enabled) {
     capturing = enabled;
     lastPosition = -1;
     lastProgressAt = Date.now();
+    lastFilterAttempt = -Infinity;
     if (enabled) {
       installFilter();
       publish();
     } else removeFilter();
-  });
+  }
+  hub.onMessage("capture", ({ enabled }) => capture(enabled));
   menu.addItem(menu.item("\u6253\u5F00\u97F3\u9891\u8054\u52A8\uFF08\u4F7F\u7528\u5F53\u524D\u7A97\u53E3\uFF09", () => {
     hub.postMessage("select-source", { title: core.status.title || "IINA" });
+    capture(true);
   }));
   menu.addItem(menu.item("\u505C\u6B62\u90CA\u72FC\u8F93\u51FA", () => hub.postMessage("emergency-stop", {}), { keyBinding: "Ctrl+Alt+ESC" }));
   event.on("iina.file-loaded", () => {
     if (!capturing) return;
     hub.postMessage("source-reset", { reason: "\u5A92\u4F53\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8" });
     seekUntil = Date.now() + 250;
+    lastFilterAttempt = -Infinity;
     installFilter();
     publish();
   });
