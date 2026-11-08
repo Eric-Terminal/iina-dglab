@@ -6,7 +6,7 @@
 
 ## 安装与连接
 
-1. 双击 `artifacts/iina-dglab-1.0.0.iinaplgz`，在 IINA 中完成安装并启用。若没有出现插件菜单，重启 IINA。
+1. 从 [Releases](https://github.com/Eric-Terminal/iina-dglab/releases/latest) 下载 `.iinaplgz` 安装包，双击后在 IINA 中完成安装并启用。也可在 IINA 的插件设置中通过 GitHub 仓库地址 `https://github.com/Eric-Terminal/iina-dglab` 安装。若没有出现插件菜单，重启 IINA。
 2. 打开带音轨的媒体，在该播放窗口的 **插件 → 郊狼音频联动 → 打开音频联动（使用当前窗口）** 打开控制台。多个播放窗口中，只有最后手动选择的窗口提供音频。
 3. 点 **连接 App**。默认使用官方 V4 中继 `wss://trex.dungeon-lab.cn/v4`，不需要在 Mac 上另外运行 Node.js 服务。
 4. 在 DG-LAB 4 的 **Socket 控制**中连接服务器：手机可以扫二维码；同一台 Mac 上可复制插件显示的 Socket 地址到 App。二维码使用官方 V4 跳转格式。
@@ -31,7 +31,7 @@
 
 - **自适应门限**：取最近约 8 秒电平的第 20 百分位作为底噪估计，加 6 dB 余量。至少 20 个样本后启用，门限每秒最多变化 3 dB，最多比用户门限高 12 dB，并限制在满幅电平以下。
 - **滞回**：开门需要超过当前门限 2 dB，关门使用当前门限，减少临界电平反复开关。低于关闭门限立即清零，不做静音拖尾。
-- **包络平滑**：门限以上使用 35 ms attack / 90 ms release 的指数平滑。默认响应指数为 1.1；仍可选择纯 RMS 或 Peak，并设置原示例的 0.8 指数。
+- **包络平滑**：门限以上使用 35 ms attack / 90 ms release 的指数平滑。默认响应指数为 1.1；可选择纯 RMS 或 Peak，或调整响应指数。
 - **频率映射**：读取每个音频声道的 `Zero_crossings_rate`，按 RMS 能量加权，换算到 48 kHz 标度，再做三点中值和 120 ms 指数平滑。ZCR 从 0.02 升到 0.22 时，频率编码从 100 降到 10。编码不是 Hz，越小表示脉冲越密。
 - **波形封包**：每帧 8 字节，前 4 字节为频率编码，后 4 字节为幅度的 70%、85%、100%、90%。单帧代表 100 ms。
 
@@ -63,8 +63,11 @@ App 未回传通道上限、通道静音或设备离线时，不开始该通道�
 
 ## 开发与验证
 
+需要 Node.js 22 或更新版本。打包脚本使用 macOS 自带的 `zip` / `unzip`。
+
 ```sh
-cd '/Users/Eric/Dev/JS:TS/iina-dglab'
+git clone https://github.com/Eric-Terminal/iina-dglab.git
+cd iina-dglab
 npm ci
 npm run check
 npm test
@@ -72,7 +75,7 @@ npm run test:mpv   # 需要本机 ffmpeg 和 mpv；使用空音频输出，不�
 npm run pack
 ```
 
-项目路径中含 `:`，npm 注入的 `.bin` 路径会被 POSIX PATH 分隔。因此脚本显式通过 `node node_modules/...` 调用工具，避免意外使用系统全局版本。
+如果项目路径包含 `:`，npm 注入的 `.bin` 路径会被 POSIX PATH 分隔。因此脚本显式通过 `node node_modules/...` 调用工具，避免意外使用系统全局版本。
 
 `dist/` 随 Git 提交，IINA 无需现场构建。开发时可以运行官方 CLI：
 
@@ -80,7 +83,7 @@ npm run pack
 /Applications/IINA.app/Contents/MacOS/iina-plugin link "$PWD"
 ```
 
-重启 IINA 并在插件设置中启用开发插件。本项目没有自动重启用户正在使用的 IINA，也没有修改真实 App 的配对和输出状态。
+重启 IINA 并在插件设置中启用开发插件。
 
 `scripts/preview.ts` 提供仅监听回环地址的本地界面测试页，包含合成音频与虚拟设备：
 
@@ -89,7 +92,9 @@ npm run build
 node node_modules/tsx/dist/cli.mjs scripts/preview.ts
 ```
 
-已验证：TypeScript 类型检查；声学映射与停止状态测试；IINA 入口模拟；官方 SDK 经真实 WebSocket 的 V4 往返；真实 mpv / FFmpeg 的静音、180 Hz 与 5 kHz 音频元数据及滤镜保留。当前尚未完成 IINA 原生窗口的视觉验收或与实体郊狼的端到端测试。浏览器视觉检查因自动化访问限制中止。后续实机应先验证配对、状态回传、暂停/跳转归零，再由使用者手动设置适合自己的通道上限。
+已验证：TypeScript 类型检查；声学映射与停止状态测试；IINA 入口模拟；官方 SDK 经真实 WebSocket 的 V4 往返；真实 mpv / FFmpeg 的静音、180 Hz 与 5 kHz 音频元数据及滤镜保留。当前尚未完成 IINA 原生窗口的视觉验收或与实体郊狼的端到端测试。实机联调时应先验证配对、状态回传、暂停/跳转归零，再由使用者手动设置适合自己的通道上限。
+
+发布新版本时，同步更新 `Info.json` 和 `package.json` 中的版本号，递增 `Info.json` 的 `ghVersion`，重建并提交 `dist/`，然后创建版本标签和附带安装包的 GitHub Release。IINA 使用仓库信息与 `ghVersion` 检查更新。
 
 ## 结构
 
@@ -110,6 +115,4 @@ node node_modules/tsx/dist/cli.mjs scripts/preview.ts
 - [旧版 Socket 协议](https://github.com/dungeonlab-open/dglab-websocket-simple/blob/main/socket/v2/README.md)
 - [OTCMultiPlugin](https://github.com/qianxiao1213/OTCMultiPlugin)：参考连接/回传/双通道控制思路，未复制其代码。
 
-用户提及的 Hum / YTMinamp 未找到可确认的对应实现，没有据此假设接口或复制算法。
-
-插件按 GPL-3.0-only 提供，与所打包的官方 SDK 许可证保持一致；第三方声明见 `THIRD_PARTY_NOTICES.md`。项目源代码、构建脚本和依赖锁文件均包含在安装包中。
+插件按 [GPL-3.0-only](LICENSE) 提供，与所打包的官方 SDK 许可证保持一致；第三方声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。项目源代码、构建脚本和依赖锁文件均包含在安装包中。
