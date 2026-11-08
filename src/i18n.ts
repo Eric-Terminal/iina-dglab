@@ -28,6 +28,7 @@ export const english: Record<string, string> = {
   '请从播放窗口的插件菜单选择音源': 'Select a source from the playback window’s Plugins menu',
   '最近十二秒的音频电平': 'Audio levels over the last twelve seconds', 'App 配对二维码': 'App pairing QR code',
   '峰值': 'Peak', '过零率': 'Zero-crossing rate', '48 kHz 标度': 'Normalized to 48 kHz', '波形预览': 'Waveform level',
+  '预览跟随当前播放时间；提前量仅用于设备输出。': 'Preview follows the current playback time. Advance applies only to device output.',
   '映射与通道': 'Mapping and channels', '参数已应用': 'Settings applied', '修改尚未应用': 'Unsaved changes',
   '电平来源': 'Level source', '动态混合 · 响度与起音': 'Dynamic · Level and onset', 'RMS · 平均响度': 'RMS · Average level', 'Peak · 瞬时峰值': 'Peak · Instantaneous level',
   '噪声门限': 'Noise gate', '满幅电平': 'Full-scale level', '波形提前量': 'Waveform advance',

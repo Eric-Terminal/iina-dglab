@@ -6,7 +6,10 @@ import { DEFAULT_SETTINGS, type AudioSample } from '../src/shared';
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 export const target: Target = { clientId: 'app-1', device: { slotId: 'coyote-1', name: '测试郊狼', type: DglabSocketDeviceType.COYOTE_030, props: { connectState: 'connected', intensityA: 0, intensityB: 0 }, slotState: { hasDevice: true, channelA: { intensityMax: 15 }, channelB: { intensityMax: 12 } } } };
-export const sample = (at: number, overrides: Partial<AudioSample> = {}): AudioSample => ({ at, title: '测试音频', running: true, reason: '', rmsDb: -10, peakDb: -5, zcr: 0.04, ...overrides });
+export const sample = (at: number, overrides: Partial<AudioSample> = {}): AudioSample => {
+  const reading = { running: true, reason: '', rmsDb: -10, peakDb: -5, zcr: 0.04, ...overrides };
+  return { at, title: '测试音频', ...reading, preview: overrides.preview || { running: reading.running, reason: reading.reason, rmsDb: reading.rmsDb, peakDb: reading.peakDb, zcr: reading.zcr } };
+};
 function setup() {
   const calls: { name: string; args: unknown[] }[] = [];
   let now = 1000;
@@ -29,6 +32,22 @@ test('连接与预览不会输出，必须手动开始；每通道遵守 App 上
     assert.equal((call.args[4] as string[]).length, 1);
     assert.equal((call.args[5] as { immediate: boolean }).immediate, true);
   }
+});
+test('预览与提前输出使用独立时间线，改变提前量不会重置预览', async () => {
+  const s = setup(); await s.controller.start();
+  const quiet = { running: true, reason: '', rmsDb: -80, peakDb: -75, zcr: 0.04 };
+  s.advance(100); s.controller.accept(sample(s.now(), { preview: quiet })); await flush();
+  assert.equal(s.controller.previewWave?.intensity, 0);
+  assert.ok(s.controller.wave!.intensity > 0);
+  assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 2);
+  const preview = s.controller.previewWave;
+  s.controller.configure({ ...s.controller.settings, advanceMs: 1000 }); await flush();
+  assert.equal(s.controller.previewWave, preview);
+  s.advance(100);
+  s.controller.accept(sample(s.now(), { ...quiet, preview: { running: true, reason: '', rmsDb: -10, peakDb: -5, zcr: 0.04 } }));
+  assert.equal(s.controller.wave?.intensity, 0);
+  assert.ok(s.controller.previewWave!.intensity > 0);
+  assert.equal(s.controller.armed, true);
 });
 test('暂停清队列并归零，恢复仅在仍处于联动状态时输出', async () => {
   const s = setup(); await s.controller.start(); s.tick(); await flush();

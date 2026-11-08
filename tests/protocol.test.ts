@@ -35,7 +35,8 @@ test('官方 SDK 经真实 WebSocket 完成配对、快照、双通道波形、�
     await devices;
     controller.setTarget({ clientId: 'test-app', device: sdk.clients[0].devices[0] });
     controller.configure({ ...DEFAULT_SETTINGS, capA: 20, capB: 20 });
-    const sample = { at: now, title: '合成音频', running: true, reason: '', rmsDb: -12, peakDb: -5, zcr: 0.04 };
+    const reading = { running: true, reason: '', rmsDb: -12, peakDb: -5, zcr: 0.04 };
+    const sample = { at: now, title: '合成音频', ...reading, preview: { ...reading } };
     controller.accept(sample);
     await controller.start();
     now += 100; controller.accept({ ...sample, at: now });

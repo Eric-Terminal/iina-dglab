@@ -55,14 +55,19 @@ export function validateSettings(value: unknown): Settings {
   return { ...s, capA: Math.floor(s.capA), capB: Math.floor(s.capB) };
 }
 
-export interface AudioSample {
-  at: number;
-  title: string;
+export interface AudioReading {
   running: boolean;
   reason: string;
   rmsDb: number | null;
   peakDb: number | null;
   zcr: number | null;
+}
+
+export interface AudioSample extends AudioReading {
+  at: number;
+  title: string;
+  /** 当前播放时刻的读数，用于校准参照；顶层读数用于实际设备输出。 */
+  preview: AudioReading;
 }
 
 export const clamp = (n: number, low: number, high: number): number => Math.max(low, Math.min(high, n));

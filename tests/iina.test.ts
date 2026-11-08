@@ -67,6 +67,7 @@ test('IINA 入口按标签增删滤镜，并正确处理暂停、静音、跳转
   clockReady = true;
   tick(); assert.match(messages.at(-1)!.data.reason, /预读缓冲/);
   writeFrames(1); tick(); assert.equal(messages.at(-1)!.data.rmsDb, -10);
+  assert.equal(messages.at(-1)!.data.preview.rmsDb, -20, '提前 100 ms 时，预览仍取当前播放时刻');
   settings.advanceMs = 0; tick(); writeFrames(1); tick();
   flags.pause = true; tick(); assert.equal(messages.at(-1)!.data.running, false);
   assert.match(messages.at(-1)!.data.reason, /暂停/);

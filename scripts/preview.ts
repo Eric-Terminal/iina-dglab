@@ -20,7 +20,7 @@ const server = createServer(async (request, response) => {
           postMessage(name) {
             if (name !== 'ready') return;
             listeners.init({ settings: ${JSON.stringify({ ...DEFAULT_SETTINGS, capA: 8, capB: 6 })}, server: 'ws://' + location.host + '/v4', connectionMode: 'remote', nodePath: '', hasSource: true, supportsWindowTracking: true, sourceTitle: '合成音频 · UI 验证' });
-            setInterval(() => { phase++; const quiet = phase % 60 < 12; listeners.audio({ at: Date.now(), title: '合成音频 · UI 验证', running: true, reason: '', rmsDb: quiet ? -65 : -21 + 10 * Math.sin(phase / 5), peakDb: quiet ? -60 : -8, zcr: .09, }); }, 100);
+            setInterval(() => { phase++; const quiet = phase % 60 < 12; const reading = { running: true, reason: '', rmsDb: quiet ? -65 : -21 + 10 * Math.sin(phase / 5), peakDb: quiet ? -60 : -8, zcr: .09 }; listeners.audio({ at: Date.now(), title: '合成音频 · UI 验证', ...reading, preview: { ...reading } }); }, 100);
           }
         };
       </script>`;

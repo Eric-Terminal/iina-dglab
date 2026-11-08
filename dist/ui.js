@@ -3510,6 +3510,7 @@
       this.settings = { ...DEFAULT_SETTINGS };
       this.sample = null;
       this.wave = null;
+      this.previewWave = null;
       this.reason = "\u5C1A\u672A\u5F00\u59CB\u8054\u52A8";
       this.generation = 0;
       this.busy = false;
@@ -3519,6 +3520,7 @@
       this.stopping = Promise.resolve();
       this.stopFailed = false;
       this.mapper = new AudioMapper();
+      this.previewMapper = new AudioMapper();
       this.transport = transport2;
       this.changed = changed;
       this.now = now;
@@ -3533,6 +3535,11 @@
     }
     configure(settings) {
       const valid = validateSettings(settings);
+      const mappingKeys = ["metric", "adaptiveGate", "gateDb", "ceilingDb", "gamma", "zcrLow", "zcrHigh", "frequencyLow", "frequencyHigh", "modulationMax"];
+      if (mappingKeys.some((key2) => valid[key2] !== this.settings[key2])) {
+        this.previewMapper.reset();
+        this.previewWave = null;
+      }
       const keepArmed = this.armed;
       this.settings = valid;
       this.mapper.reset();
@@ -3577,6 +3584,10 @@
     }
     accept(sample) {
       this.sample = sample;
+      const preview = sample.preview;
+      const previewValid = preview.running && this.hasRecentSample() && [preview.rmsDb, preview.peakDb, preview.zcr].every((n) => typeof n === "number" && Number.isFinite(n));
+      if (!previewValid) this.previewMapper.reset();
+      this.previewWave = previewValid ? this.previewMapper.next({ rmsDb: preview.rmsDb, peakDb: preview.peakDb, zcr: preview.zcr }, this.settings, sample.at) : null;
       const valid = [sample.rmsDb, sample.peakDb, sample.zcr].every((n) => typeof n === "number" && Number.isFinite(n));
       if (!sample.running || !valid || !this.isFresh()) this.mapper.reset();
       this.wave = sample.running && valid && this.isFresh() ? this.mapper.next({ rmsDb: sample.rmsDb, peakDb: sample.peakDb, zcr: sample.zcr }, this.settings, sample.at) : null;
@@ -3624,6 +3635,8 @@
       this.sample = null;
       this.wave = null;
       this.mapper.reset();
+      this.previewWave = null;
+      this.previewMapper.reset();
       if (this.armed) void this.silence("\u8054\u52A8\u5DF2\u5F00\u542F\uFF0C\u7B49\u5F85\u97F3\u9891\u6062\u590D", false);
       else this.changed();
     }
@@ -3720,6 +3733,7 @@
     "\u8FC7\u96F6\u7387": "Zero-crossing rate",
     "48 kHz \u6807\u5EA6": "Normalized to 48 kHz",
     "\u6CE2\u5F62\u9884\u89C8": "Waveform level",
+    "\u9884\u89C8\u8DDF\u968F\u5F53\u524D\u64AD\u653E\u65F6\u95F4\uFF1B\u63D0\u524D\u91CF\u4EC5\u7528\u4E8E\u8BBE\u5907\u8F93\u51FA\u3002": "Preview follows the current playback time. Advance applies only to device output.",
     "\u6620\u5C04\u4E0E\u901A\u9053": "Mapping and channels",
     "\u53C2\u6570\u5DF2\u5E94\u7528": "Settings applied",
     "\u4FEE\u6539\u5C1A\u672A\u5E94\u7528": "Unsaved changes",
@@ -4075,14 +4089,14 @@
     $("status").textContent = t(controller.reason) + (dirty ? ` \xB7 ${t("\u53C2\u6570\u5C1A\u672A\u5E94\u7528\uFF0C\u8BF7\u5148\u70B9\u300C\u5E94\u7528\u53C2\u6570\u300D\u3002")}` : "");
     $("start").disabled = controller.armed || controller.starting || connecting || disconnecting || !controller.target || !hasSource || !supportsWindowTracking || dirty;
     $("start").textContent = t(controller.armed ? "\u8054\u52A8\u5DF2\u5F00\u542F" : controller.starting ? "\u6B63\u5728\u51C6\u5907\u2026" : dirty ? "\u8BF7\u5148\u5E94\u7528\u53C2\u6570" : "\u5F00\u59CB\u8054\u52A8");
-    const sample = controller.sample;
+    const sample = controller.sample?.preview;
     const number = (n, digits = 1) => typeof n === "number" && Number.isFinite(n) ? Math.max(-99, n).toFixed(digits) : "\u2014";
     $("rms").textContent = number(sample?.rmsDb);
     $("peak").textContent = number(sample?.peakDb);
     $("zcr").textContent = number(sample?.zcr, 3);
-    $("amplitude").textContent = String(controller.wave?.intensity || 0);
-    $("signal-state").textContent = t(sample?.running ? `\u95E8\u9650 ${number(controller.wave?.gateDb)} dBFS \xB7 ${controller.wave?.gated ? "\u5173\u95ED" : "\u901A\u8FC7"}` : sample?.reason || "\u7B49\u5F85\u97F3\u9891");
-    if (sample) $("source").textContent = sample.title;
+    $("amplitude").textContent = String(controller.previewWave?.intensity || 0);
+    $("signal-state").textContent = t(sample?.running ? `\u95E8\u9650 ${number(controller.previewWave?.gateDb)} dBFS \xB7 ${controller.previewWave?.gated ? "\u5173\u95ED" : "\u901A\u8FC7"}` : sample?.reason || "\u7B49\u5F85\u97F3\u9891");
+    if (controller.sample) $("source").textContent = controller.sample.title;
     for (const [channel, id] of [[0, "channel-a"], [1, "channel-b"]]) {
       $(id).textContent = t(controller.target ? `App \u5F53\u524D ${number(Number(controller.target.device.props?.[channel === 0 ? "intensityA" : "intensityB"]), 0)} / \u4E0A\u9650 ${channelLimit(controller.target, channel)}` : "\u7B49\u5F85 App \u56DE\u4F20\u4E0A\u9650");
     }
@@ -4094,7 +4108,7 @@
     if (!ctx) return;
     const width = canvas.width, height = canvas.height;
     ctx.clearRect(0, 0, width, height);
-    const gate = controller.wave?.gateDb ?? controller.settings.gateDb;
+    const gate = controller.previewWave?.gateDb ?? controller.settings.gateDb;
     const y = (db) => height - Math.max(0, Math.min(1, (db + 75) / 75)) * (height - 8) - 4;
     ctx.strokeStyle = "#777777";
     ctx.setLineDash([4, 5]);
@@ -4212,7 +4226,7 @@
     bridge.onMessage("audio", (sample) => {
       hasSource = true;
       controller.accept(sample);
-      samples.push(sample.running ? controller.wave?.db ?? null : null);
+      samples.push(sample.preview.running ? controller.previewWave?.db ?? null : null);
       if (samples.length > 120) samples.shift();
       drawScope();
     });

@@ -210,14 +210,14 @@ function render(): void {
   $('status').textContent = t(controller.reason) + (dirty ? ` · ${t('参数尚未应用，请先点「应用参数」。')}` : '');
   $<HTMLButtonElement>('start').disabled = controller.armed || controller.starting || connecting || disconnecting || !controller.target || !hasSource || !supportsWindowTracking || dirty;
   $('start').textContent = t(controller.armed ? '联动已开启' : controller.starting ? '正在准备…' : dirty ? '请先应用参数' : '开始联动');
-  const sample = controller.sample;
+  const sample = controller.sample?.preview;
   const number = (n: number | null | undefined, digits = 1) => typeof n === 'number' && Number.isFinite(n) ? Math.max(-99, n).toFixed(digits) : '—';
   $('rms').textContent = number(sample?.rmsDb);
   $('peak').textContent = number(sample?.peakDb);
   $('zcr').textContent = number(sample?.zcr, 3);
-  $('amplitude').textContent = String(controller.wave?.intensity || 0);
-  $('signal-state').textContent = t(sample?.running ? `门限 ${number(controller.wave?.gateDb)} dBFS · ${controller.wave?.gated ? '关闭' : '通过'}` : sample?.reason || '等待音频');
-  if (sample) $('source').textContent = sample.title;
+  $('amplitude').textContent = String(controller.previewWave?.intensity || 0);
+  $('signal-state').textContent = t(sample?.running ? `门限 ${number(controller.previewWave?.gateDb)} dBFS · ${controller.previewWave?.gated ? '关闭' : '通过'}` : sample?.reason || '等待音频');
+  if (controller.sample) $('source').textContent = controller.sample.title;
   for (const [channel, id] of [[0, 'channel-a'], [1, 'channel-b']] as const) {
     $(id).textContent = t(controller.target
       ? `App 当前 ${number(Number(controller.target.device.props?.[channel === 0 ? 'intensityA' : 'intensityB']), 0)} / 上限 ${channelLimit(controller.target, channel)}`
@@ -232,7 +232,7 @@ function drawScope(): void {
   if (!ctx) return;
   const width = canvas.width, height = canvas.height;
   ctx.clearRect(0, 0, width, height);
-  const gate = controller.wave?.gateDb ?? controller.settings.gateDb;
+  const gate = controller.previewWave?.gateDb ?? controller.settings.gateDb;
   const y = (db: number) => height - Math.max(0, Math.min(1, (db + 75) / 75)) * (height - 8) - 4;
   ctx.strokeStyle = '#777777';
   ctx.setLineDash([4, 5]);
@@ -307,7 +307,7 @@ if (bridge) {
   bridge.onMessage('audio', (sample: AudioSample) => {
     hasSource = true;
     controller.accept(sample);
-    samples.push(sample.running ? controller.wave?.db ?? null : null);
+    samples.push(sample.preview.running ? controller.previewWave?.db ?? null : null);
     if (samples.length > 120) samples.shift();
     drawScope();
   });

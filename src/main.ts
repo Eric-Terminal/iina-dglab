@@ -88,7 +88,8 @@ function publish(reasonOverride?: string): void {
   if (!reason && (mpv.getFlag('paused-for-cache') || mpv.getFlag('seeking') || at < seekUntil)) reason = '正在缓冲或定位';
   if (!reason && mpv.getFlag('eof-reached')) reason = '播放已结束';
   if (!reason && (typeof position !== 'number' || at - lastProgressAt > STALE_MS)) reason = '播放进度未更新';
-  const sample: AudioSample = { at, title: core.status.title || 'IINA', running: false, reason, rmsDb: null, peakDb: null, zcr: null };
+  const empty = { running: false, reason, rmsDb: null, peakDb: null, zcr: null };
+  const sample: AudioSample = { at, title: core.status.title || 'IINA', ...empty, preview: { ...empty } };
   if (!reason) {
     const params = mpv.getNative<{ samplerate?: number }>('audio-params');
     if (!params?.samplerate) sample.reason = '当前音轨未提供 PCM 音频，请检查音轨选择与音频直通设置';
@@ -100,6 +101,7 @@ function publish(reasonOverride?: string): void {
         // 音轨格式先于输出时钟就绪；此时重建 AO 会让部分 mpv 版本卡在首帧。
         if (typeof audioPosition !== 'number' || !Number.isFinite(audioPosition)) {
           sample.reason = '正在等待音频播放时钟';
+          sample.preview.reason = sample.reason;
           hub.postMessage('audio', sample);
           return;
         }
@@ -109,18 +111,23 @@ function publish(reasonOverride?: string): void {
         if (audioBuffer.update(advance)) {
           timeline.reset(); stats?.seekToEnd();
           sample.reason = '正在调整音频预读缓冲';
+          sample.preview.reason = sample.reason;
           hub.postMessage('audio', sample);
           return;
         }
         readStats(params.samplerate);
         // audio-pts 包含音频驱动延迟；用媒体时钟定位，再把真实毫秒换算为倍速下的媒体跨度。
         const speed = mpv.getNumber('speed');
+        const current = speed > 0 ? timeline.at(audioPosition, 0, speed) : null;
+        if (!filterError && current) Object.assign(sample.preview, current, { running: true });
+        else sample.preview.reason = filterError || '正在等待音频统计，请保持播放';
         const features = speed > 0 ? timeline.at(audioPosition, advance, speed) : null;
         if (!filterError && features) Object.assign(sample, features, { running: true });
         else sample.reason = filterError || (advance > 0 ? '音频预读不足，请减小提前量或等待缓冲' : '正在等待音频统计，请保持播放');
       } catch (error) { sample.reason = `无法读取音频统计：${String(error)}`; }
     }
   }
+  if (!sample.preview.running && !sample.preview.reason) sample.preview.reason = sample.reason;
   hub.postMessage('audio', sample);
 }
 

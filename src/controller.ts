@@ -28,6 +28,7 @@ export class AudioController {
   settings: Settings = { ...DEFAULT_SETTINGS };
   sample: AudioSample | null = null;
   wave: Wave | null = null;
+  previewWave: Wave | null = null;
   reason = '尚未开始联动';
   private transport: Transport;
   private now: () => number;
@@ -40,6 +41,7 @@ export class AudioController {
   private stopping: Promise<void> = Promise.resolve();
   private stopFailed = false;
   private mapper = new AudioMapper();
+  private previewMapper = new AudioMapper();
 
   constructor(transport: Transport, changed: () => void, now = Date.now) {
     this.transport = transport;
@@ -58,6 +60,10 @@ export class AudioController {
 
   configure(settings: Settings): void {
     const valid = validateSettings(settings);
+    const mappingKeys: (keyof Settings)[] = ['metric', 'adaptiveGate', 'gateDb', 'ceilingDb', 'gamma', 'zcrLow', 'zcrHigh', 'frequencyLow', 'frequencyHigh', 'modulationMax'];
+    if (mappingKeys.some(key => valid[key] !== this.settings[key])) {
+      this.previewMapper.reset(); this.previewWave = null;
+    }
     const keepArmed = this.armed;
     this.settings = valid;
     this.mapper.reset();
@@ -105,6 +111,11 @@ export class AudioController {
 
   accept(sample: AudioSample): void {
     this.sample = sample;
+    const preview = sample.preview;
+    const previewValid = preview.running && this.hasRecentSample() && [preview.rmsDb, preview.peakDb, preview.zcr].every(n => typeof n === 'number' && Number.isFinite(n));
+    if (!previewValid) this.previewMapper.reset();
+    // 预览有自己的历史与平滑器，设备提前量和输出开关不应改变校准参照。
+    this.previewWave = previewValid ? this.previewMapper.next({ rmsDb: preview.rmsDb!, peakDb: preview.peakDb!, zcr: preview.zcr! }, this.settings, sample.at) : null;
     const valid = [sample.rmsDb, sample.peakDb, sample.zcr].every(n => typeof n === 'number' && Number.isFinite(n));
     if (!sample.running || !valid || !this.isFresh()) this.mapper.reset();
     this.wave = sample.running && valid && this.isFresh() ? this.mapper.next({ rmsDb: sample.rmsDb!, peakDb: sample.peakDb!, zcr: sample.zcr! }, this.settings, sample.at) : null;
@@ -147,6 +158,8 @@ export class AudioController {
     this.sample = null;
     this.wave = null;
     this.mapper.reset();
+    this.previewWave = null;
+    this.previewMapper.reset();
     if (this.armed) void this.silence('联动已开启，等待音频恢复', false);
     else this.changed();
   }

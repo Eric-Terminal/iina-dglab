@@ -167,6 +167,7 @@
     "\u8FC7\u96F6\u7387": "Zero-crossing rate",
     "48 kHz \u6807\u5EA6": "Normalized to 48 kHz",
     "\u6CE2\u5F62\u9884\u89C8": "Waveform level",
+    "\u9884\u89C8\u8DDF\u968F\u5F53\u524D\u64AD\u653E\u65F6\u95F4\uFF1B\u63D0\u524D\u91CF\u4EC5\u7528\u4E8E\u8BBE\u5907\u8F93\u51FA\u3002": "Preview follows the current playback time. Advance applies only to device output.",
     "\u6620\u5C04\u4E0E\u901A\u9053": "Mapping and channels",
     "\u53C2\u6570\u5DF2\u5E94\u7528": "Settings applied",
     "\u4FEE\u6539\u5C1A\u672A\u5E94\u7528": "Unsaved changes",

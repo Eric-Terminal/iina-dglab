@@ -164,6 +164,7 @@
     "\u8FC7\u96F6\u7387": "Zero-crossing rate",
     "48 kHz \u6807\u5EA6": "Normalized to 48 kHz",
     "\u6CE2\u5F62\u9884\u89C8": "Waveform level",
+    "\u9884\u89C8\u8DDF\u968F\u5F53\u524D\u64AD\u653E\u65F6\u95F4\uFF1B\u63D0\u524D\u91CF\u4EC5\u7528\u4E8E\u8BBE\u5907\u8F93\u51FA\u3002": "Preview follows the current playback time. Advance applies only to device output.",
     "\u6620\u5C04\u4E0E\u901A\u9053": "Mapping and channels",
     "\u53C2\u6570\u5DF2\u5E94\u7528": "Settings applied",
     "\u4FEE\u6539\u5C1A\u672A\u5E94\u7528": "Unsaved changes",
@@ -384,7 +385,8 @@
     if (!reason && (mpv.getFlag("paused-for-cache") || mpv.getFlag("seeking") || at < seekUntil)) reason = "\u6B63\u5728\u7F13\u51B2\u6216\u5B9A\u4F4D";
     if (!reason && mpv.getFlag("eof-reached")) reason = "\u64AD\u653E\u5DF2\u7ED3\u675F";
     if (!reason && (typeof position !== "number" || at - lastProgressAt > STALE_MS)) reason = "\u64AD\u653E\u8FDB\u5EA6\u672A\u66F4\u65B0";
-    const sample = { at, title: core.status.title || "IINA", running: false, reason, rmsDb: null, peakDb: null, zcr: null };
+    const empty = { running: false, reason, rmsDb: null, peakDb: null, zcr: null };
+    const sample = { at, title: core.status.title || "IINA", ...empty, preview: { ...empty } };
     if (!reason) {
       const params = mpv.getNative("audio-params");
       if (!params?.samplerate) sample.reason = "\u5F53\u524D\u97F3\u8F68\u672A\u63D0\u4F9B PCM \u97F3\u9891\uFF0C\u8BF7\u68C0\u67E5\u97F3\u8F68\u9009\u62E9\u4E0E\u97F3\u9891\u76F4\u901A\u8BBE\u7F6E";
@@ -394,6 +396,7 @@
           const audioPosition = mpv.getNative("audio-pts");
           if (typeof audioPosition !== "number" || !Number.isFinite(audioPosition)) {
             sample.reason = "\u6B63\u5728\u7B49\u5F85\u97F3\u9891\u64AD\u653E\u65F6\u949F";
+            sample.preview.reason = sample.reason;
             hub.postMessage("audio", sample);
             return;
           }
@@ -403,11 +406,15 @@
             timeline.reset();
             stats?.seekToEnd();
             sample.reason = "\u6B63\u5728\u8C03\u6574\u97F3\u9891\u9884\u8BFB\u7F13\u51B2";
+            sample.preview.reason = sample.reason;
             hub.postMessage("audio", sample);
             return;
           }
           readStats(params.samplerate);
           const speed = mpv.getNumber("speed");
+          const current = speed > 0 ? timeline.at(audioPosition, 0, speed) : null;
+          if (!filterError && current) Object.assign(sample.preview, current, { running: true });
+          else sample.preview.reason = filterError || "\u6B63\u5728\u7B49\u5F85\u97F3\u9891\u7EDF\u8BA1\uFF0C\u8BF7\u4FDD\u6301\u64AD\u653E";
           const features = speed > 0 ? timeline.at(audioPosition, advance, speed) : null;
           if (!filterError && features) Object.assign(sample, features, { running: true });
           else sample.reason = filterError || (advance > 0 ? "\u97F3\u9891\u9884\u8BFB\u4E0D\u8DB3\uFF0C\u8BF7\u51CF\u5C0F\u63D0\u524D\u91CF\u6216\u7B49\u5F85\u7F13\u51B2" : "\u6B63\u5728\u7B49\u5F85\u97F3\u9891\u7EDF\u8BA1\uFF0C\u8BF7\u4FDD\u6301\u64AD\u653E");
@@ -416,6 +423,7 @@
         }
       }
     }
+    if (!sample.preview.running && !sample.preview.reason) sample.preview.reason = sample.reason;
     hub.postMessage("audio", sample);
   }
   function capture(enabled) {
