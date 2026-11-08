@@ -1,6 +1,6 @@
 import type { V4DeviceInfo } from 'dglab-kit';
 import { AudioMapper, type Wave } from './audio';
-import { DEFAULT_SETTINGS, SAMPLE_MS, STALE_MS, validateSettings, type AudioSample, type Settings } from './shared';
+import { DEFAULT_SETTINGS, RESPONSE_TIMEOUT_MS, SAMPLE_MS, STALE_MS, validateSettings, type AudioSample, type Settings } from './shared';
 
 export interface Target { clientId: string; device: V4DeviceInfo }
 export interface Transport {
@@ -30,6 +30,7 @@ export class AudioController {
   wave: Wave | null = null;
   previewWave: Wave | null = null;
   reason = '尚未开始联动';
+  failure: string | null = null;
   private transport: Transport;
   private now: () => number;
   private changed: () => void;
@@ -53,7 +54,7 @@ export class AudioController {
     const same = target && this.target && target.clientId === this.target.clientId && target.device.slotId === this.target.device.slotId;
     if (!same) void this.stop('设备已切换，请重新开始联动');
     this.target = target;
-    if (!same) this.stopFailed = false;
+    if (!same) { this.stopFailed = false; this.failure = null; }
     if (target && !isConnected(target)) void this.stop('设备已离线');
     this.changed();
   }
@@ -86,6 +87,7 @@ export class AudioController {
       if (!this.target || !isConnected(this.target)) throw new Error('请先连接 App 并选择在线的郊狼 3.0。');
       if (!this.channels().length) throw new Error('请设置至少一个通道的强度上限，并确认 App 已回传非零上限。');
       this.armed = true;
+      this.failure = null;
       this.reason = this.isFresh() ? '联动已就绪' : '联动已开启，等待音频';
     } finally { this.starting = false; this.changed(); }
   }
@@ -143,12 +145,15 @@ export class AudioController {
     for (const [channel, cap] of channels) {
       this.ownedChannels.add(channel);
       // 只发当前 100 ms 帧，并替换同类任务；延迟时丢帧，绝不追赶或排长队。
-      requests.push(this.transport.setTempIntensity(clientId, device.slotId, channel, cap, 250, { immediate: true, timeout: 600 }));
-      requests.push(this.transport.sendPulse(clientId, device.slotId, channel, SAMPLE_MS, [this.wave.hex], { immediate: true, timeout: 600 }));
+      requests.push(this.command('设置临时强度', channel, this.transport.setTempIntensity(clientId, device.slotId, channel, cap, 250, { immediate: true, timeout: RESPONSE_TIMEOUT_MS })));
+      requests.push(this.command('发送波形', channel, this.transport.sendPulse(clientId, device.slotId, channel, SAMPLE_MS, [this.wave.hex], { immediate: true, timeout: RESPONSE_TIMEOUT_MS })));
     }
     this.reason = '正在跟随音频';
     void Promise.all(requests).catch(error => {
-      if (generation === this.generation) void this.stop(`App 指令失败：${String(error)}`);
+      if (generation === this.generation) {
+        this.failure = error instanceof Error ? error.message : String(error);
+        void this.stop('设备指令失败，请查看下方详情');
+      }
     }).finally(() => { if (generation === this.generation) this.busy = false; this.changed(); });
   }
 
@@ -169,6 +174,13 @@ export class AudioController {
     return this.silence(reason, true);
   }
 
+  private command(name: string, channel: 0 | 1, request: Promise<unknown>): Promise<unknown> {
+    return request.catch(error => {
+      const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      throw new Error(`${channel === 0 ? 'A' : 'B'} 通道 · ${name}：${detail}`);
+    });
+  }
+
   private silence(reason: string, disarm: boolean): Promise<void> {
     if (disarm) { this.armed = false; this.generation++; this.busy = false; }
     this.reason = reason;
@@ -180,8 +192,8 @@ export class AudioController {
     const { clientId, device } = this.target;
     const requests: Promise<unknown>[] = [];
     for (const channel of this.ownedChannels) {
-      requests.push(this.transport.clearOperate(clientId, { slotId: device.slotId, channel }));
-      requests.push(this.transport.resetIntensity(clientId, device.slotId, channel, { timeout: 600 }));
+      requests.push(this.command('清除任务', channel, this.transport.clearOperate(clientId, { slotId: device.slotId, channel })));
+      requests.push(this.command('归零强度', channel, this.transport.resetIntensity(clientId, device.slotId, channel, { timeout: RESPONSE_TIMEOUT_MS })));
     }
     this.ownedChannels.clear();
     this.stopping = Promise.allSettled(requests).then(results => {
@@ -191,7 +203,9 @@ export class AudioController {
       this.busy = false;
       if (failed) {
         this.armed = false;
-        this.reason = '停止指令未获确认，请检查 App；本次波形与临时强度任务有时限';
+        const details = results.filter(result => result.status === 'rejected').map(result => (result as PromiseRejectedResult).reason.message);
+        this.failure = [this.failure || `触发原因：${reason}`, ...details].join('\n');
+        this.reason = '停止指令未获确认，请断开并重新连接；详情见下方';
       }
       this.changed();
     });

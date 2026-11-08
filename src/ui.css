@@ -51,7 +51,7 @@ footer { padding:6px 0 0; }
 .stop { color:var(--danger); border-color:#674043; background:#302225; }
 kbd { font:10px -apple-system,sans-serif; opacity:.65; margin-left:8px; }
 .footnote { font-size:10px; margin-top:11px; }
-.error { color:var(--danger); overflow-wrap:anywhere; }
+.error { color:var(--danger); overflow-wrap:anywhere; white-space:pre-line; }
 .pair-grid { display:grid; grid-template-columns:172px 1fr; align-items:center; gap:16px; }
 .pair-grid.local { grid-template-columns:1fr; }
 #connection-mode { margin-bottom:12px; }

@@ -272,7 +272,20 @@
     "\u53C2\u6570 {name} \u5FC5\u987B\u5728 {min}\uFF5E{max} \u4E4B\u95F4\u3002": "{name} must be between {min} and {max}.",
     "\u97F3\u9891\u7EDF\u8BA1\u6EE4\u955C\u6302\u8F7D\u5931\u8D25\uFF1A{error}": "Could not attach the audio statistics filter: {error}",
     "\u65E0\u6CD5\u8BFB\u53D6\u97F3\u9891\u7EDF\u8BA1\uFF1A{error}": "Cannot read audio statistics: {error}",
-    "App \u6307\u4EE4\u5931\u8D25\uFF1A{error}": "Device command failed: {error}"
+    "App \u6307\u4EE4\u5931\u8D25\uFF1A{error}": "Device command failed: {error}",
+    "\u8BBE\u7F6E\u4E34\u65F6\u5F3A\u5EA6": "Set temporary intensity",
+    "\u53D1\u9001\u6CE2\u5F62": "Send waveform",
+    "\u6E05\u9664\u4EFB\u52A1": "Clear tasks",
+    "\u5F52\u96F6\u5F3A\u5EA6": "Reset intensity",
+    "\u8BBE\u5907\u6307\u4EE4\u5931\u8D25\uFF0C\u8BF7\u67E5\u770B\u4E0B\u65B9\u8BE6\u60C5": "Device command failed. See details below.",
+    "\u505C\u6B62\u6307\u4EE4\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u65AD\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5\uFF1B\u8BE6\u60C5\u89C1\u4E0B\u65B9": "Stop was not acknowledged. Disconnect and reconnect; see details below.",
+    "\u89E6\u53D1\u539F\u56E0\uFF1A{reason}": "Triggered by: {reason}",
+    "{channel} \u901A\u9053 \xB7 {command}\uFF1A{error}": "Channel {channel} \xB7 {command}: {error}",
+    "\u7B49\u5F85\u54CD\u5E94\u8D85\u65F6": "Response timed out",
+    "\u88AB\u63A7\u65B9\u5DF2\u65AD\u5F00": "The controlled app disconnected",
+    "WebSocket \u5DF2\u65AD\u5F00": "WebSocket disconnected",
+    "{name}: \u7B49\u5F85\u54CD\u5E94\u8D85\u65F6": "{name}: Response timed out",
+    "{name}: \u88AB\u63A7\u65B9\u5DF2\u65AD\u5F00": "{name}: The controlled app disconnected"
   };
   var locale = "zh-CN";
   function resolveLanguage(value, systemLocale) {
@@ -294,6 +307,7 @@
   function t(message) {
     if (locale === "zh-CN") return message;
     if (english[message]) return english[message];
+    if (message.includes("\n")) return message.split("\n").map(t).join("\n");
     if (message.startsWith("Error: ")) return `Error: ${t(message.slice(7))}`;
     for (const { pattern, value, fields } of patterns) {
       const match = pattern.exec(message);

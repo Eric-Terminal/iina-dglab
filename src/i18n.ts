@@ -83,6 +83,12 @@ export const english: Record<string, string> = {
   '参数 {name} 必须在 {min}～{max} 之间。': '{name} must be between {min} and {max}.',
   '音频统计滤镜挂载失败：{error}': 'Could not attach the audio statistics filter: {error}',
   '无法读取音频统计：{error}': 'Cannot read audio statistics: {error}', 'App 指令失败：{error}': 'Device command failed: {error}',
+  '设置临时强度': 'Set temporary intensity', '发送波形': 'Send waveform', '清除任务': 'Clear tasks', '归零强度': 'Reset intensity',
+  '设备指令失败，请查看下方详情': 'Device command failed. See details below.',
+  '停止指令未获确认，请断开并重新连接；详情见下方': 'Stop was not acknowledged. Disconnect and reconnect; see details below.',
+  '触发原因：{reason}': 'Triggered by: {reason}', '{channel} 通道 · {command}：{error}': 'Channel {channel} · {command}: {error}',
+  '等待响应超时': 'Response timed out', '被控方已断开': 'The controlled app disconnected', 'WebSocket 已断开': 'WebSocket disconnected',
+  '{name}: 等待响应超时': '{name}: Response timed out', '{name}: 被控方已断开': '{name}: The controlled app disconnected',
 };
 
 let locale: Locale = 'zh-CN';
@@ -105,6 +111,7 @@ const patterns = Object.entries(english).filter(([key]) => key.includes('{')).ma
 export function t(message: string): string {
   if (locale === 'zh-CN') return message;
   if (english[message]) return english[message];
+  if (message.includes('\n')) return message.split('\n').map(t).join('\n');
   if (message.startsWith('Error: ')) return `Error: ${t(message.slice(7))}`;
   for (const { pattern, value, fields } of patterns) {
     const match = pattern.exec(message);

@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { WebSocketServer } from 'ws';
 import { DglabSocket, DglabSocketDeviceType } from 'dglab-kit';
 import { AudioController } from '../src/controller';
-import { DEFAULT_SETTINGS } from '../src/shared';
+import { DEFAULT_SETTINGS, RESPONSE_TIMEOUT_MS } from '../src/shared';
 
 test('官方 SDK 经真实 WebSocket 完成配对、快照、双通道波形、归零与断连', async () => {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
@@ -12,7 +12,8 @@ test('官方 SDK 经真实 WebSocket 完成配对、快照、双通道波形、�
   const frames: any[] = [];
   const address = server.address();
   assert.ok(address && typeof address === 'object');
-  const sdk = new DglabSocket({ url: `ws://127.0.0.1:${address.port}`, responseTimeout: 800 });
+  const sdk = new DglabSocket({ url: `ws://127.0.0.1:${address.port}`, responseTimeout: RESPONSE_TIMEOUT_MS });
+  let responseDelay = 0;
   let now = Date.now();
   const controller = new AudioController(sdk, () => {}, () => now);
   server.on('connection', ws => {
@@ -25,7 +26,7 @@ test('官方 SDK 经真实 WebSocket 完成配对、快照、双通道波形、�
       const frame = JSON.parse(raw.toString());
       if (frame.type === 'ping') { ws.send(JSON.stringify({ type: 'pong' })); return; }
       frames.push(frame);
-      ws.send(JSON.stringify({ type: 'message', clientId: frame.clientId, data: { t: 'resp', reqId: frame.data.reqId, result: {} } }));
+      setTimeout(() => ws.send(JSON.stringify({ type: 'message', clientId: frame.clientId, data: { t: 'resp', reqId: frame.data.reqId, result: {} } })), responseDelay);
     });
   });
   try {
@@ -48,7 +49,15 @@ test('官方 SDK 经真实 WebSocket 完成配对、快照、双通道波形、�
       assert.equal(frame.data.t, 'req'); assert.equal(frame.data.m, 'device.op');
       assert.equal(frame.data.data.s, 'test-slot'); assert.equal(frame.data.data.im, true);
     }
+    responseDelay = 900;
+    now += 100; controller.accept({ ...sample, at: now });
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    assert.equal(controller.armed, true, '900 ms 的远程确认不应被旧的 600 ms 超时解除联动');
+    assert.equal(frames.filter(f => f.data.data.t === 0).length, 4);
+    assert.ok(frames.filter(f => f.data.data.t === 0).every(f => f.data.data.d === 100));
+    assert.ok(frames.filter(f => f.data.data.t === 4).every(f => f.data.data.d === 250));
     await controller.stop();
+    assert.equal(controller.failure, null);
     assert.equal(frames.filter(f => f.data.m === 'device.op.clear').length, 2);
     assert.equal(frames.filter(f => f.data.data.t === 7 && f.data.data.v === 0).length, 2);
   } finally {

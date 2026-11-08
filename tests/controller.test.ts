@@ -202,6 +202,18 @@ test('App 拒绝波形时解除联动并清理已发送的任务', async () => {
   await s.controller.start(); s.tick(); await flush();
   assert.equal(s.controller.armed, false);
   assert.ok(s.calls.some(c => c.name === 'clearOperate'));
+  assert.match(s.controller.failure!, /A 通道 · 发送波形：Error: 设备拒绝/);
+});
+test('停止清理失败保留最初输出错误，并指出每个通道的失败指令', async () => {
+  const s = setup();
+  s.transport.sendPulse = () => Promise.reject(Object.assign(new Error('等待响应超时'), { name: 'socket-response-timeout' }));
+  s.transport.clearOperate = () => Promise.reject(new Error('清理超时'));
+  s.transport.resetIntensity = () => Promise.reject(new Error('归零超时'));
+  await s.controller.start(); s.tick(); await flush();
+  assert.equal(s.controller.armed, false);
+  assert.match(s.controller.failure!, /A 通道 · 发送波形：socket-response-timeout: 等待响应超时/);
+  assert.match(s.controller.failure!, /A 通道 · 清除任务：Error: 清理超时/);
+  assert.match(s.controller.failure!, /B 通道 · 归零强度：Error: 归零超时/);
 });
 test('连续停止后可以重新开始，旧清理回调不会卡住发送', async () => {
   const s = setup(); await s.controller.start(); s.tick(); await flush();

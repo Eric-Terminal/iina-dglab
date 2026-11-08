@@ -1,7 +1,7 @@
 import { DglabSocket } from 'dglab-kit';
 import QRCode from 'qrcode';
 import { AudioController, channelLimit, isConnected, type Target, type Transport } from './controller';
-import { DEFAULT_SETTINGS, OFFICIAL_SERVER, validateSettings, type AudioSample, type Settings } from './shared';
+import { DEFAULT_SETTINGS, OFFICIAL_SERVER, RESPONSE_TIMEOUT_MS, validateSettings, type AudioSample, type Settings } from './shared';
 import { bindDocumentLanguage, setLanguage, getLocale, t, type Language } from './i18n';
 
 interface Bridge {
@@ -20,7 +20,8 @@ const translateDocument = bindDocumentLanguage(document);
 let language: Language = 'system';
 setLanguage(language, navigator.language);
 translateDocument();
-let socket = new DglabSocket({ url: OFFICIAL_SERVER, responseTimeout: 800 });
+let socket = new DglabSocket({ url: OFFICIAL_SERVER, responseTimeout: RESPONSE_TIMEOUT_MS });
+let shownFailure: string | null = null;
 let targets: Target[] = [];
 let socketState: string = 'idle';
 let dirty = false;
@@ -121,7 +122,7 @@ async function connect(): Promise<void> {
   try {
     const url = local ? await startLocal() : validateServer(serverInput.value);
     if (generation !== connectionGeneration) return;
-    const current = new DglabSocket({ url, connectTimeout: 8000, responseTimeout: 800 });
+    const current = new DglabSocket({ url, connectTimeout: 8000, responseTimeout: RESPONSE_TIMEOUT_MS });
     socket = current;
     current.on('state', state => {
       if (current !== socket) return;
@@ -222,6 +223,11 @@ function render(): void {
     $(id).textContent = t(controller.target
       ? `App 当前 ${number(Number(controller.target.device.props?.[channel === 0 ? 'intensityA' : 'intensityB']), 0)} / 上限 ${channelLimit(controller.target, channel)}`
       : '等待 App 回传上限');
+  }
+  if (shownFailure !== controller.failure) {
+    if (controller.failure) showError(controller.failure);
+    else if ($('error').dataset.message === shownFailure) { $('error').hidden = true; delete $('error').dataset.message; }
+    shownFailure = controller.failure;
   }
   if ($('error').dataset.message) $('error').textContent = t($('error').dataset.message!);
 }

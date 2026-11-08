@@ -1,5 +1,7 @@
 export const SAMPLE_MS = 100;
 export const STALE_MS = 350;
+// 确认等待与设备任务时限分开；远程应答较慢不应延长或重发 100/250 ms 的任务。
+export const RESPONSE_TIMEOUT_MS = 2000;
 export const OFFICIAL_SERVER = 'wss://trex.dungeon-lab.cn/v4';
 export const FILTER_LABEL = 'iina_dglab';
 // ZCR 没有 Overall 字段，必须启用逐通道统计；不重采样、不改变声道布局。

@@ -3352,6 +3352,7 @@
   // src/shared.ts
   var SAMPLE_MS = 100;
   var STALE_MS = 350;
+  var RESPONSE_TIMEOUT_MS = 2e3;
   var OFFICIAL_SERVER = "wss://trex.dungeon-lab.cn/v4";
   var FILTER_LABEL = "iina_dglab";
   var ASTATS_FILTER = "astats=metadata=1:reset=1:measure_perchannel=RMS_level+Peak_level+Zero_crossings_rate:measure_overall=RMS_level+Peak_level";
@@ -3512,6 +3513,7 @@
       this.wave = null;
       this.previewWave = null;
       this.reason = "\u5C1A\u672A\u5F00\u59CB\u8054\u52A8";
+      this.failure = null;
       this.generation = 0;
       this.busy = false;
       this.outputting = false;
@@ -3529,7 +3531,10 @@
       const same = target && this.target && target.clientId === this.target.clientId && target.device.slotId === this.target.device.slotId;
       if (!same) void this.stop("\u8BBE\u5907\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8");
       this.target = target;
-      if (!same) this.stopFailed = false;
+      if (!same) {
+        this.stopFailed = false;
+        this.failure = null;
+      }
       if (target && !isConnected(target)) void this.stop("\u8BBE\u5907\u5DF2\u79BB\u7EBF");
       this.changed();
     }
@@ -3560,6 +3565,7 @@
         if (!this.target || !isConnected(this.target)) throw new Error("\u8BF7\u5148\u8FDE\u63A5 App \u5E76\u9009\u62E9\u5728\u7EBF\u7684\u90CA\u72FC 3.0\u3002");
         if (!this.channels().length) throw new Error("\u8BF7\u8BBE\u7F6E\u81F3\u5C11\u4E00\u4E2A\u901A\u9053\u7684\u5F3A\u5EA6\u4E0A\u9650\uFF0C\u5E76\u786E\u8BA4 App \u5DF2\u56DE\u4F20\u975E\u96F6\u4E0A\u9650\u3002");
         this.armed = true;
+        this.failure = null;
         this.reason = this.isFresh() ? "\u8054\u52A8\u5DF2\u5C31\u7EEA" : "\u8054\u52A8\u5DF2\u5F00\u542F\uFF0C\u7B49\u5F85\u97F3\u9891";
       } finally {
         this.starting = false;
@@ -3619,12 +3625,15 @@
       const requests = [];
       for (const [channel, cap] of channels) {
         this.ownedChannels.add(channel);
-        requests.push(this.transport.setTempIntensity(clientId, device.slotId, channel, cap, 250, { immediate: true, timeout: 600 }));
-        requests.push(this.transport.sendPulse(clientId, device.slotId, channel, SAMPLE_MS, [this.wave.hex], { immediate: true, timeout: 600 }));
+        requests.push(this.command("\u8BBE\u7F6E\u4E34\u65F6\u5F3A\u5EA6", channel, this.transport.setTempIntensity(clientId, device.slotId, channel, cap, 250, { immediate: true, timeout: RESPONSE_TIMEOUT_MS })));
+        requests.push(this.command("\u53D1\u9001\u6CE2\u5F62", channel, this.transport.sendPulse(clientId, device.slotId, channel, SAMPLE_MS, [this.wave.hex], { immediate: true, timeout: RESPONSE_TIMEOUT_MS })));
       }
       this.reason = "\u6B63\u5728\u8DDF\u968F\u97F3\u9891";
       void Promise.all(requests).catch((error) => {
-        if (generation === this.generation) void this.stop(`App \u6307\u4EE4\u5931\u8D25\uFF1A${String(error)}`);
+        if (generation === this.generation) {
+          this.failure = error instanceof Error ? error.message : String(error);
+          void this.stop("\u8BBE\u5907\u6307\u4EE4\u5931\u8D25\uFF0C\u8BF7\u67E5\u770B\u4E0B\u65B9\u8BE6\u60C5");
+        }
       }).finally(() => {
         if (generation === this.generation) this.busy = false;
         this.changed();
@@ -3644,6 +3653,12 @@
       this.mapper.reset();
       return this.silence(reason, true);
     }
+    command(name, channel, request) {
+      return request.catch((error) => {
+        const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        throw new Error(`${channel === 0 ? "A" : "B"} \u901A\u9053 \xB7 ${name}\uFF1A${detail}`);
+      });
+    }
     silence(reason, disarm) {
       if (disarm) {
         this.armed = false;
@@ -3662,8 +3677,8 @@
       const { clientId, device } = this.target;
       const requests = [];
       for (const channel of this.ownedChannels) {
-        requests.push(this.transport.clearOperate(clientId, { slotId: device.slotId, channel }));
-        requests.push(this.transport.resetIntensity(clientId, device.slotId, channel, { timeout: 600 }));
+        requests.push(this.command("\u6E05\u9664\u4EFB\u52A1", channel, this.transport.clearOperate(clientId, { slotId: device.slotId, channel })));
+        requests.push(this.command("\u5F52\u96F6\u5F3A\u5EA6", channel, this.transport.resetIntensity(clientId, device.slotId, channel, { timeout: RESPONSE_TIMEOUT_MS })));
       }
       this.ownedChannels.clear();
       this.stopping = Promise.allSettled(requests).then((results) => {
@@ -3673,7 +3688,9 @@
         this.busy = false;
         if (failed) {
           this.armed = false;
-          this.reason = "\u505C\u6B62\u6307\u4EE4\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u68C0\u67E5 App\uFF1B\u672C\u6B21\u6CE2\u5F62\u4E0E\u4E34\u65F6\u5F3A\u5EA6\u4EFB\u52A1\u6709\u65F6\u9650";
+          const details = results.filter((result) => result.status === "rejected").map((result) => result.reason.message);
+          this.failure = [this.failure || `\u89E6\u53D1\u539F\u56E0\uFF1A${reason}`, ...details].join("\n");
+          this.reason = "\u505C\u6B62\u6307\u4EE4\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u65AD\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5\uFF1B\u8BE6\u60C5\u89C1\u4E0B\u65B9";
         }
         this.changed();
       });
@@ -3838,7 +3855,20 @@
     "\u53C2\u6570 {name} \u5FC5\u987B\u5728 {min}\uFF5E{max} \u4E4B\u95F4\u3002": "{name} must be between {min} and {max}.",
     "\u97F3\u9891\u7EDF\u8BA1\u6EE4\u955C\u6302\u8F7D\u5931\u8D25\uFF1A{error}": "Could not attach the audio statistics filter: {error}",
     "\u65E0\u6CD5\u8BFB\u53D6\u97F3\u9891\u7EDF\u8BA1\uFF1A{error}": "Cannot read audio statistics: {error}",
-    "App \u6307\u4EE4\u5931\u8D25\uFF1A{error}": "Device command failed: {error}"
+    "App \u6307\u4EE4\u5931\u8D25\uFF1A{error}": "Device command failed: {error}",
+    "\u8BBE\u7F6E\u4E34\u65F6\u5F3A\u5EA6": "Set temporary intensity",
+    "\u53D1\u9001\u6CE2\u5F62": "Send waveform",
+    "\u6E05\u9664\u4EFB\u52A1": "Clear tasks",
+    "\u5F52\u96F6\u5F3A\u5EA6": "Reset intensity",
+    "\u8BBE\u5907\u6307\u4EE4\u5931\u8D25\uFF0C\u8BF7\u67E5\u770B\u4E0B\u65B9\u8BE6\u60C5": "Device command failed. See details below.",
+    "\u505C\u6B62\u6307\u4EE4\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u65AD\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5\uFF1B\u8BE6\u60C5\u89C1\u4E0B\u65B9": "Stop was not acknowledged. Disconnect and reconnect; see details below.",
+    "\u89E6\u53D1\u539F\u56E0\uFF1A{reason}": "Triggered by: {reason}",
+    "{channel} \u901A\u9053 \xB7 {command}\uFF1A{error}": "Channel {channel} \xB7 {command}: {error}",
+    "\u7B49\u5F85\u54CD\u5E94\u8D85\u65F6": "Response timed out",
+    "\u88AB\u63A7\u65B9\u5DF2\u65AD\u5F00": "The controlled app disconnected",
+    "WebSocket \u5DF2\u65AD\u5F00": "WebSocket disconnected",
+    "{name}: \u7B49\u5F85\u54CD\u5E94\u8D85\u65F6": "{name}: Response timed out",
+    "{name}: \u88AB\u63A7\u65B9\u5DF2\u65AD\u5F00": "{name}: The controlled app disconnected"
   };
   var locale = "zh-CN";
   function resolveLanguage(value, systemLocale) {
@@ -3863,6 +3893,7 @@
   function t(message) {
     if (locale === "zh-CN") return message;
     if (english[message]) return english[message];
+    if (message.includes("\n")) return message.split("\n").map(t).join("\n");
     if (message.startsWith("Error: ")) return `Error: ${t(message.slice(7))}`;
     for (const { pattern, value, fields } of patterns) {
       const match = pattern.exec(message);
@@ -3905,7 +3936,8 @@
   var language = "system";
   setLanguage(language, navigator.language);
   translateDocument();
-  var socket = new DglabSocket({ url: OFFICIAL_SERVER, responseTimeout: 800 });
+  var socket = new DglabSocket({ url: OFFICIAL_SERVER, responseTimeout: RESPONSE_TIMEOUT_MS });
+  var shownFailure = null;
   var targets = [];
   var socketState = "idle";
   var dirty = false;
@@ -4000,7 +4032,7 @@
     try {
       const url = local ? await startLocal() : validateServer(serverInput.value);
       if (generation !== connectionGeneration) return;
-      const current = new DglabSocket({ url, connectTimeout: 8e3, responseTimeout: 800 });
+      const current = new DglabSocket({ url, connectTimeout: 8e3, responseTimeout: RESPONSE_TIMEOUT_MS });
       socket = current;
       current.on("state", (state) => {
         if (current !== socket) return;
@@ -4099,6 +4131,14 @@
     if (controller.sample) $("source").textContent = controller.sample.title;
     for (const [channel, id] of [[0, "channel-a"], [1, "channel-b"]]) {
       $(id).textContent = t(controller.target ? `App \u5F53\u524D ${number(Number(controller.target.device.props?.[channel === 0 ? "intensityA" : "intensityB"]), 0)} / \u4E0A\u9650 ${channelLimit(controller.target, channel)}` : "\u7B49\u5F85 App \u56DE\u4F20\u4E0A\u9650");
+    }
+    if (shownFailure !== controller.failure) {
+      if (controller.failure) showError(controller.failure);
+      else if ($("error").dataset.message === shownFailure) {
+        $("error").hidden = true;
+        delete $("error").dataset.message;
+      }
+      shownFailure = controller.failure;
     }
     if ($("error").dataset.message) $("error").textContent = t($("error").dataset.message);
   }
