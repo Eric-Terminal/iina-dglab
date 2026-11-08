@@ -3359,6 +3359,8 @@
   var AUDIO_FILTER = `@${FILTER_LABEL}:lavfi=[${ASTATS_FILTER}]`;
   var DEFAULT_SETTINGS = {
     advanceMs: 0,
+    frequencyBalance: 0,
+    pulseBalance: 0,
     metric: "hybrid",
     adaptiveGate: true,
     gateDb: -38,
@@ -3379,6 +3381,8 @@
     const s = value;
     const ranges = [
       ["advanceMs", 0, 1e3],
+      ["frequencyBalance", 0, 255],
+      ["pulseBalance", 0, 255],
       ["gateDb", -90, -1],
       ["ceilingDb", -60, 0],
       ["gamma", 0.2, 3],
@@ -3402,7 +3406,7 @@
     if (!["hybrid", "rms", "peak"].includes(s.metric) || typeof s.adaptiveGate !== "boolean" || typeof s.channelA !== "boolean" || typeof s.channelB !== "boolean") {
       throw new Error("\u7535\u5E73\u6A21\u5F0F\u6216\u901A\u9053\u9009\u9879\u65E0\u6548\u3002");
     }
-    return { ...s, capA: Math.floor(s.capA), capB: Math.floor(s.capB) };
+    return { ...s, capA: Math.floor(s.capA), capB: Math.floor(s.capB), frequencyBalance: Math.floor(s.frequencyBalance), pulseBalance: Math.floor(s.pulseBalance) };
   }
   var clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 
@@ -3561,9 +3565,9 @@
         await this.stopping;
         if (generation !== this.generation) return;
         this.busy = false;
-        if (this.stopFailed) throw new Error("\u4E0A\u6B21\u505C\u6B62\u64CD\u4F5C\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u68C0\u67E5 App \u540E\u65AD\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5\u3002");
-        if (!this.target || !isConnected(this.target)) throw new Error("\u8BF7\u5148\u8FDE\u63A5 App \u5E76\u9009\u62E9\u5728\u7EBF\u7684\u90CA\u72FC 3.0\u3002");
-        if (!this.channels().length) throw new Error("\u8BF7\u8BBE\u7F6E\u81F3\u5C11\u4E00\u4E2A\u901A\u9053\u7684\u5F3A\u5EA6\u4E0A\u9650\uFF0C\u5E76\u786E\u8BA4 App \u5DF2\u56DE\u4F20\u975E\u96F6\u4E0A\u9650\u3002");
+        if (this.stopFailed) throw new Error("\u4E0A\u6B21\u505C\u6B62\u64CD\u4F5C\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u5907\u8FDE\u63A5\u540E\u65AD\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5\u3002");
+        if (!this.target || !isConnected(this.target)) throw new Error("\u8BF7\u5148\u8FDE\u63A5\u5E76\u9009\u62E9\u5728\u7EBF\u7684\u90CA\u72FC 3.0\u3002");
+        if (!this.channels().length) throw new Error("\u8BF7\u8BBE\u7F6E\u81F3\u5C11\u4E00\u4E2A\u901A\u9053\u7684\u975E\u96F6\u5F3A\u5EA6\u4E0A\u9650\uFF0C\u5E76\u68C0\u67E5\u8BBE\u5907\u901A\u9053\u72B6\u6001\u3002");
         this.armed = true;
         this.failure = null;
         this.reason = this.isFresh() ? "\u8054\u52A8\u5DF2\u5C31\u7EEA" : "\u8054\u52A8\u5DF2\u5F00\u542F\uFF0C\u7B49\u5F85\u97F3\u9891";
@@ -3609,7 +3613,7 @@
       }
       const channels = this.channels();
       if (!channels.length) {
-        void this.stop("\u6240\u9009\u901A\u9053\u4E0D\u53EF\u8F93\u51FA\uFF0C\u8BF7\u68C0\u67E5 App \u4E0A\u9650\u548C\u9759\u97F3\u72B6\u6001");
+        void this.stop("\u6240\u9009\u901A\u9053\u4E0D\u53EF\u8F93\u51FA\uFF0C\u8BF7\u68C0\u67E5\u4E0A\u9650\u548C\u9759\u97F3\u72B6\u6001");
         return;
       }
       if ([...this.ownedChannels].some((c) => !channels.some(([active]) => c === active))) {
@@ -3703,6 +3707,61 @@
   var english = {
     "\u90CA\u72FC\u97F3\u9891\u8054\u52A8": "Coyote Audio Link",
     "\u97F3\u9891\u8054\u52A8": "Audio Link",
+    "\u84DD\u7259\u76F4\u8FDE \xB7 \u65E0\u9700 App": "Direct Bluetooth \xB7 No app",
+    "\u9644\u8FD1\u7684\u90CA\u72FC 3.0": "Nearby Coyote 3.0 devices",
+    "\u70B9\u51FB\u626B\u63CF\u8BBE\u5907": "Click Scan devices",
+    "\u91CD\u65B0\u626B\u63CF": "Scan again",
+    "\u8FDE\u63A5\u8BBE\u5907": "Connect device",
+    "\u626B\u63CF\u8BBE\u5907": "Scan devices",
+    "\u9009\u62E9\u9644\u8FD1\u8BBE\u5907": "Select a nearby device",
+    "\u5C1A\u672A\u53D1\u73B0\u8BBE\u5907": "No devices found yet",
+    "\u7B49\u5F85\u84DD\u7259\u8BBE\u5907\u8FDE\u63A5": "Waiting for Bluetooth device",
+    "\u6B63\u5728\u626B\u63CF": "Scanning",
+    "\u8BF7\u9009\u62E9\u8BBE\u5907": "Select a device",
+    "\u84DD\u7259\u5DF2\u8FDE\u63A5": "Bluetooth connected",
+    "\u6B63\u5728\u65AD\u5F00": "Disconnecting",
+    "\u84DD\u7259\u8FDE\u63A5\u5F02\u5E38": "Bluetooth error",
+    "\u901A\u8FC7\u8FD9\u53F0 Mac \u7684\u84DD\u7259\u8FDE\u63A5\u90CA\u72FC 3.0\uFF0C\u65E0\u9700\u5B98\u65B9 App \u6216\u4E2D\u7EE7\u3002": "Connect Coyote 3.0 through this Mac\u2019s Bluetooth. No official app or relay required.",
+    "\u8BF7\u5148\u65AD\u5F00\u5B98\u65B9 App \u5BF9\u8BBE\u5907\u7684\u84DD\u7259\u8FDE\u63A5\uFF0C\u5E76\u5141\u8BB8\u84DD\u7259\u52A9\u624B\u8BBF\u95EE\u84DD\u7259\u3002\u8FDE\u63A5\u540E\u9700\u624B\u52A8\u5F00\u542F\u8054\u52A8\u3002": "Disconnect the device from the official app first and allow Bluetooth access for the helper. Enable Audio Link manually after connecting.",
+    "\u76F4\u8FDE\u8BBE\u5907\u6821\u51C6": "Direct connection calibration",
+    "\u9891\u7387\u5E73\u8861": "Frequency balance",
+    "\u8109\u5BBD\u5E73\u8861": "Pulse-width balance",
+    "\u4E24\u901A\u9053\u5171\u7528\u8FD9\u7EC4\u6821\u51C6\uFF0C\u9ED8\u8BA4\u5747\u4E3A 0\u3002\u76F4\u8FDE\u4F1A\u5199\u5165\u63D2\u4EF6\u7684\u901A\u9053\u4E0A\u9650\u4E0E\u6821\u51C6\uFF0C\u8BBE\u5907\u4F1A\u4FDD\u5B58\u8FD9\u4E9B\u503C\u3002": "Both channels use these values, initially 0. Direct connection writes the plugin\u2019s intensity limits and calibration to the device, which stores them.",
+    "\u76F4\u8FDE\u4F7F\u7528\u63D2\u4EF6\u8BBE\u7F6E\u7684\u901A\u9053\u4E0A\u9650\uFF1B\u9996\u6B21\u8FDE\u63A5\u4FDD\u6301\u96F6\u8F93\u51FA\u3002": "Direct connection uses the plugin\u2019s intensity limits. Connecting keeps output at zero.",
+    "\u7535\u91CF {value}%": "Battery {value}%",
+    "\u8BBE\u5907\u5F53\u524D {value} / \u4E0A\u9650 {limit}": "Device intensity {value} / limit {limit}",
+    "\u8BF7\u5728 IINA \u63D2\u4EF6\u7A97\u53E3\u4E2D\u542F\u52A8\u84DD\u7259\u76F4\u8FDE\u3002": "Start direct Bluetooth from the IINA plugin window.",
+    "\u84DD\u7259\u52A9\u624B\u5DF2\u542F\u52A8": "The Bluetooth helper is already running",
+    "\u627E\u4E0D\u5230\u84DD\u7259\u52A9\u624B\uFF0C\u8BF7\u91CD\u65B0\u5B89\u88C5\u63D2\u4EF6\u3002": "The Bluetooth helper is missing. Reinstall the plugin.",
+    "\u84DD\u7259\u52A9\u624B\u65E0\u6CD5\u542F\u52A8\uFF0C\u8BF7\u68C0\u67E5 macOS \u7684\u9690\u79C1\u4E0E\u5B89\u5168\u6027\u8BBE\u7F6E\u3002": "The Bluetooth helper could not launch. Check macOS Privacy & Security settings.",
+    "\u84DD\u7259\u52A9\u624B\u542F\u52A8\u8D85\u65F6\uFF0C\u8BF7\u68C0\u67E5 macOS \u662F\u5426\u963B\u6B62\u4E86\u52A9\u624B\u542F\u52A8\u3002": "Bluetooth helper startup timed out. Check whether macOS blocked its launch.",
+    "\u84DD\u7259\u52A9\u624B\u672A\u80FD\u542F\u52A8\u672C\u5730\u8FDE\u63A5\u3002": "The Bluetooth helper could not start its local connection.",
+    "\u84DD\u7259\u8FDE\u63A5\u5DF2\u53D6\u6D88": "Bluetooth connection cancelled",
+    "\u84DD\u7259\u4F1A\u8BDD\u5DF2\u7ED3\u675F\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5": "Bluetooth session ended. Reconnect.",
+    "\u65E0\u6548\u7684\u84DD\u7259\u8BF7\u6C42": "Invalid Bluetooth request",
+    "\u84DD\u7259\u52A9\u624B\u54CD\u5E94\u8D85\u65F6": "Bluetooth helper response timed out",
+    "\u84DD\u7259\u52A9\u624B\u8FDE\u63A5\u5931\u8D25": "Bluetooth helper connection failed",
+    "\u8BF7\u5728\u7CFB\u7EDF\u8BBE\u7F6E\u4E2D\u5141\u8BB8\u90CA\u72FC\u84DD\u7259\u52A9\u624B\u8BBF\u95EE\u84DD\u7259\u3002": "Allow Coyote Bluetooth to access Bluetooth in System Settings.",
+    "\u84DD\u7259\u5DF2\u5173\u95ED\uFF0C\u8BF7\u6253\u5F00\u8FD9\u53F0 Mac \u7684\u84DD\u7259\u3002": "Bluetooth is off. Turn on Bluetooth on this Mac.",
+    "\u8FD9\u53F0 Mac \u65E0\u6CD5\u4F7F\u7528\u4F4E\u529F\u8017\u84DD\u7259\u3002": "Bluetooth Low Energy is unavailable on this Mac.",
+    "\u84DD\u7259\u6B63\u5728\u91CD\u7F6E\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5\u3002": "Bluetooth is resetting. Reconnect.",
+    "\u84DD\u7259\u5C1A\u672A\u5C31\u7EEA\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002": "Bluetooth is not ready. Try again shortly.",
+    "\u8BBE\u5907\u5DF2\u8FDE\u63A5\uFF0C\u8BF7\u5148\u65AD\u5F00\u3002": "A device is already connected. Disconnect it first.",
+    "\u672A\u627E\u5230\u6240\u9009\u8BBE\u5907\uFF0C\u8BF7\u91CD\u65B0\u626B\u63CF\u3002": "The selected device was not found. Scan again.",
+    "\u8BBE\u5907\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u786E\u8BA4\u8BBE\u5907\u5DF2\u5F00\u673A\u4E14\u672A\u88AB\u5176\u4ED6 App \u5360\u7528\u3002": "Connection failed. Make sure the device is on and disconnected from other apps.",
+    "\u8FDE\u63A5\u8BBE\u5907\u8D85\u65F6\uFF0C\u8BF7\u65AD\u5F00\u5176\u4ED6 App \u540E\u91CD\u8BD5\u3002": "Device connection timed out. Disconnect other apps and try again.",
+    "\u8BBE\u5907\u672A\u63D0\u4F9B\u90CA\u72FC 3.0 \u6240\u9700\u7684\u84DD\u7259\u670D\u52A1\u3002": "The device does not provide the required Coyote 3.0 Bluetooth services.",
+    "\u65E0\u6CD5\u8BA2\u9605\u8BBE\u5907\u786E\u8BA4\u901A\u77E5\u3002": "Could not subscribe to device acknowledgements.",
+    "\u8BBE\u5907\u672A\u786E\u8BA4\u5F52\u96F6\uFF0C\u8FDE\u63A5\u5DF2\u505C\u6B62\u3002": "The device did not confirm zero intensity. Connection stopped.",
+    "\u8BBE\u5907\u5C1A\u672A\u5C31\u7EEA\uFF0C\u8BF7\u5148\u8FDE\u63A5\u3002": "The device is not ready. Connect it first.",
+    "\u8BBE\u5907\u5F3A\u5EA6\u786E\u8BA4\u8D85\u65F6\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002": "Device intensity acknowledgement timed out. Direct connection stopped.",
+    "\u84DD\u7259\u5199\u5165\u5931\u8D25\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002": "Bluetooth write failed. Direct connection stopped.",
+    "\u84DD\u7259\u5199\u5165\u8D85\u65F6\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002": "Bluetooth write timed out. Direct connection stopped.",
+    "\u84DD\u7259\u5199\u5165\u961F\u5217\u62E5\u585E\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002": "The Bluetooth write queue is congested. Direct connection stopped.",
+    "\u76F4\u8FDE\u53C2\u6570\u65E0\u6548": "Invalid direct connection settings",
+    "\u6CE2\u5F62\u6570\u636E\u65E0\u6548": "Invalid waveform data",
+    "\u84DD\u7259\u547D\u4EE4\u53C2\u6570\u65E0\u6548": "Invalid Bluetooth command parameters",
+    "\u84DD\u7259\u52A9\u624B\u6B63\u5728\u9000\u51FA": "The Bluetooth helper is shutting down",
     "\u8BED\u8A00": "Language",
     "\u8DDF\u968F\u7CFB\u7EDF": "System default",
     "\u672A\u8FDE\u63A5": "Disconnected",
@@ -3807,12 +3866,12 @@
     "\u8BBE\u5907\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8": "Device changed. Enable Audio Link again.",
     "\u8BBE\u5907\u5DF2\u79BB\u7EBF": "Device disconnected",
     "\u53C2\u6570\u5DF2\u5E94\u7528\uFF0C\u7EE7\u7EED\u8054\u52A8": "Settings applied; Audio Link remains enabled",
-    "\u4E0A\u6B21\u505C\u6B62\u64CD\u4F5C\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u68C0\u67E5 App \u540E\u65AD\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5\u3002": "The last stop was not acknowledged. Check the device connection, then disconnect and reconnect.",
-    "\u8BF7\u5148\u8FDE\u63A5 App \u5E76\u9009\u62E9\u5728\u7EBF\u7684\u90CA\u72FC 3.0\u3002": "Connect and select an online Coyote 3.0 first.",
-    "\u8BF7\u8BBE\u7F6E\u81F3\u5C11\u4E00\u4E2A\u901A\u9053\u7684\u5F3A\u5EA6\u4E0A\u9650\uFF0C\u5E76\u786E\u8BA4 App \u5DF2\u56DE\u4F20\u975E\u96F6\u4E0A\u9650\u3002": "Set a positive intensity limit for at least one channel and check its connection limits.",
+    "\u4E0A\u6B21\u505C\u6B62\u64CD\u4F5C\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u5907\u8FDE\u63A5\u540E\u65AD\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5\u3002": "The last stop was not acknowledged. Check the device connection, then disconnect and reconnect.",
+    "\u8BF7\u5148\u8FDE\u63A5\u5E76\u9009\u62E9\u5728\u7EBF\u7684\u90CA\u72FC 3.0\u3002": "Connect and select an online Coyote 3.0 first.",
+    "\u8BF7\u8BBE\u7F6E\u81F3\u5C11\u4E00\u4E2A\u901A\u9053\u7684\u975E\u96F6\u5F3A\u5EA6\u4E0A\u9650\uFF0C\u5E76\u68C0\u67E5\u8BBE\u5907\u901A\u9053\u72B6\u6001\u3002": "Set a positive intensity limit for at least one channel and check its connection limits.",
     "\u8054\u52A8\u5DF2\u5C31\u7EEA": "Audio Link is ready",
     "\u8054\u52A8\u5DF2\u5F00\u542F\uFF0C\u7B49\u5F85\u97F3\u9891": "Audio Link enabled; waiting for audio",
-    "\u6240\u9009\u901A\u9053\u4E0D\u53EF\u8F93\u51FA\uFF0C\u8BF7\u68C0\u67E5 App \u4E0A\u9650\u548C\u9759\u97F3\u72B6\u6001": "Selected channels cannot output. Check intensity limits and mute state.",
+    "\u6240\u9009\u901A\u9053\u4E0D\u53EF\u8F93\u51FA\uFF0C\u8BF7\u68C0\u67E5\u4E0A\u9650\u548C\u9759\u97F3\u72B6\u6001": "Selected channels cannot output. Check intensity limits and mute state.",
     "\u901A\u9053\u72B6\u6001\u5DF2\u6539\u53D8": "Channel state changed",
     "\u6B63\u5728\u8DDF\u968F\u97F3\u9891": "Following audio",
     "\u4F4E\u4E8E\u566A\u58F0\u95E8\u9650": "Below noise gate",
@@ -3871,6 +3930,30 @@
     "{name}: \u88AB\u63A7\u65B9\u5DF2\u65AD\u5F00": "{name}: The controlled app disconnected"
   };
   var locale = "zh-CN";
+  var bluetoothErrors = {
+    "bluetooth-denied": "\u8BF7\u5728\u7CFB\u7EDF\u8BBE\u7F6E\u4E2D\u5141\u8BB8\u90CA\u72FC\u84DD\u7259\u52A9\u624B\u8BBF\u95EE\u84DD\u7259\u3002",
+    "bluetooth-off": "\u84DD\u7259\u5DF2\u5173\u95ED\uFF0C\u8BF7\u6253\u5F00\u8FD9\u53F0 Mac \u7684\u84DD\u7259\u3002",
+    "bluetooth-unsupported": "\u8FD9\u53F0 Mac \u65E0\u6CD5\u4F7F\u7528\u4F4E\u529F\u8017\u84DD\u7259\u3002",
+    "bluetooth-reset": "\u84DD\u7259\u6B63\u5728\u91CD\u7F6E\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5\u3002",
+    "bluetooth-unavailable": "\u84DD\u7259\u5C1A\u672A\u5C31\u7EEA\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",
+    "already-connected": "\u8BBE\u5907\u5DF2\u8FDE\u63A5\uFF0C\u8BF7\u5148\u65AD\u5F00\u3002",
+    "device-not-found": "\u672A\u627E\u5230\u6240\u9009\u8BBE\u5907\uFF0C\u8BF7\u91CD\u65B0\u626B\u63CF\u3002",
+    "device-connect-failed": "\u8BBE\u5907\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u786E\u8BA4\u8BBE\u5907\u5DF2\u5F00\u673A\u4E14\u672A\u88AB\u5176\u4ED6 App \u5360\u7528\u3002",
+    "device-connect-timeout": "\u8FDE\u63A5\u8BBE\u5907\u8D85\u65F6\uFF0C\u8BF7\u65AD\u5F00\u5176\u4ED6 App \u540E\u91CD\u8BD5\u3002",
+    "device-incompatible": "\u8BBE\u5907\u672A\u63D0\u4F9B\u90CA\u72FC 3.0 \u6240\u9700\u7684\u84DD\u7259\u670D\u52A1\u3002",
+    "device-notify-failed": "\u65E0\u6CD5\u8BA2\u9605\u8BBE\u5907\u786E\u8BA4\u901A\u77E5\u3002",
+    "device-zero-failed": "\u8BBE\u5907\u672A\u786E\u8BA4\u5F52\u96F6\uFF0C\u8FDE\u63A5\u5DF2\u505C\u6B62\u3002",
+    "device-not-ready": "\u8BBE\u5907\u5C1A\u672A\u5C31\u7EEA\uFF0C\u8BF7\u5148\u8FDE\u63A5\u3002",
+    "device-ack-timeout": "\u8BBE\u5907\u5F3A\u5EA6\u786E\u8BA4\u8D85\u65F6\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002",
+    "device-write-failed": "\u84DD\u7259\u5199\u5165\u5931\u8D25\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002",
+    "device-write-timeout": "\u84DD\u7259\u5199\u5165\u8D85\u65F6\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002",
+    "device-write-overflow": "\u84DD\u7259\u5199\u5165\u961F\u5217\u62E5\u585E\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002",
+    "invalid-settings": "\u76F4\u8FDE\u53C2\u6570\u65E0\u6548",
+    "invalid-frame": "\u6CE2\u5F62\u6570\u636E\u65E0\u6548",
+    "invalid-command": "\u84DD\u7259\u547D\u4EE4\u53C2\u6570\u65E0\u6548",
+    "unknown-method": "\u65E0\u6548\u7684\u84DD\u7259\u8BF7\u6C42",
+    "helper-stopping": "\u84DD\u7259\u52A9\u624B\u6B63\u5728\u9000\u51FA"
+  };
   function resolveLanguage(value, systemLocale) {
     if (value === "en" || value === "zh-CN") return value;
     return systemLocale.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
@@ -3891,6 +3974,7 @@
     return { pattern: new RegExp(`^${escaped}$`), value, fields };
   });
   function t(message) {
+    message = message.replace(/bluetooth:([a-z-]+)/g, (source, code) => bluetoothErrors[code] || source);
     if (locale === "zh-CN") return message;
     if (english[message]) return english[message];
     if (message.includes("\n")) return message.split("\n").map(t).join("\n");
@@ -3923,6 +4007,114 @@
     };
   }
 
+  // src/bluetooth-transport.ts
+  var BluetoothTransport = class {
+    constructor(bridge2, changed) {
+      this.bridge = bridge2;
+      this.changed = changed;
+      this.sequence = 0;
+      this.pending = /* @__PURE__ */ new Map();
+      this.session = null;
+      this.status = null;
+      this.starting = false;
+      this.generation = 0;
+      bridge2?.onMessage("bluetooth-result", (data) => {
+        const pending = this.pending.get(data.id);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.pending.delete(data.id);
+        if (data.error) pending.reject(new Error(data.error));
+        else pending.resolve(data.result);
+      });
+      bridge2?.onMessage("bluetooth-status", (data) => {
+        if (data.session === this.session) this.update(data.status);
+      });
+    }
+    get active() {
+      return this.session !== null || this.starting;
+    }
+    update(status) {
+      this.status = status;
+      this.changed(status);
+    }
+    request(method, params = {}, timeout = 3e3) {
+      if (!this.bridge) return Promise.reject(new Error("\u8BF7\u5728 IINA \u7684\u63D2\u4EF6\u63A7\u5236\u7A97\u53E3\u4E2D\u6253\u5F00\u6B64\u9875\u9762\u3002"));
+      const id = ++this.sequence;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          this.pending.delete(id);
+          reject(new Error("\u84DD\u7259\u52A9\u624B\u54CD\u5E94\u8D85\u65F6"));
+        }, timeout);
+        this.pending.set(id, { resolve, reject, timer });
+        this.bridge.postMessage("bluetooth", { id, session: this.session, method, params });
+      });
+    }
+    async start(appPath) {
+      const generation = ++this.generation;
+      this.starting = true;
+      try {
+        const result = await this.request("start", { appPath }, 1e4);
+        if (generation !== this.generation) throw new Error("\u84DD\u7259\u8FDE\u63A5\u5DF2\u53D6\u6D88");
+        this.session = result.session;
+        this.update(result.status);
+      } finally {
+        this.starting = false;
+      }
+    }
+    async scan() {
+      const generation = this.generation;
+      const status = await this.request("scan");
+      if (generation === this.generation) this.update(status);
+    }
+    async connect(id, settings) {
+      const generation = this.generation;
+      await this.configure(settings);
+      if (generation !== this.generation) return;
+      const status = await this.request("connect", { id });
+      if (generation === this.generation) this.update(status);
+    }
+    async configure(settings) {
+      const generation = this.generation;
+      const status = await this.request("configure", { capA: settings.capA, capB: settings.capB, frequencyBalance: settings.frequencyBalance, pulseBalance: settings.pulseBalance });
+      if (generation === this.generation) this.update(status);
+    }
+    async stop() {
+      if (!this.active) return;
+      this.generation++;
+      try {
+        await this.request("stop");
+      } finally {
+        this.session = null;
+        this.update(null);
+        for (const pending of this.pending.values()) {
+          clearTimeout(pending.timer);
+          pending.reject(new Error("\u84DD\u7259\u4F1A\u8BDD\u5DF2\u7ED3\u675F\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5"));
+        }
+        this.pending.clear();
+      }
+    }
+    assertTarget(client, slot) {
+      if (client !== `bluetooth-${this.session}` || this.status?.state !== "ready" || slot !== this.status.deviceId) throw new Error("bluetooth:device-not-ready");
+    }
+    async sendPulse(client, slot, channel, duration, frames) {
+      this.assertTarget(client, slot);
+      if (frames.length !== 1) throw new Error("bluetooth:invalid-frame");
+      return this.request("pulse", { channel, duration, frame: frames[0] });
+    }
+    async setTempIntensity(client, slot, channel, value, duration) {
+      this.assertTarget(client, slot);
+      return this.request("intensity", { channel, value, duration });
+    }
+    async clearOperate(client, options) {
+      this.assertTarget(client, options.slotId);
+      return this.request("clear", { channel: options.channel });
+    }
+    async resetIntensity(client, slot, channel) {
+      this.assertTarget(client, slot);
+      return this.request("intensity", { channel, value: 0, duration: 250 });
+    }
+  };
+
   // src/ui.ts
   var bridge = window.iina;
   var $ = (id) => document.getElementById(id);
@@ -3931,6 +4123,7 @@
   var modeInput = $("connection-mode");
   var nodeInput = $("node-path");
   var deviceSelect = $("device");
+  var bluetoothSelect = $("bluetooth-device");
   var languageInput = $("language");
   var translateDocument = bindDocumentLanguage(document);
   var language = "system";
@@ -3948,11 +4141,14 @@
   var connectionGeneration = 0;
   var localResult;
   var samples = [];
+  var bluetooth = new BluetoothTransport(bridge, updateBluetooth);
+  var lastBluetoothError = null;
+  var activeTransport = () => modeInput.value === "bluetooth" ? bluetooth : socket;
   var transport = {
-    sendPulse: (...args) => socket.sendPulse(...args),
-    setTempIntensity: (...args) => socket.setTempIntensity(...args),
-    clearOperate: (...args) => socket.clearOperate(...args),
-    resetIntensity: (...args) => socket.resetIntensity(...args)
+    sendPulse: (...args) => activeTransport().sendPulse(...args),
+    setTempIntensity: (...args) => activeTransport().setTempIntensity(...args),
+    clearOperate: (...args) => activeTransport().clearOperate(...args),
+    resetIntensity: (...args) => activeTransport().resetIntensity(...args)
   };
   var controller = new AudioController(transport, render);
   function showError(error) {
@@ -3962,6 +4158,27 @@
   }
   function key(target) {
     return JSON.stringify([target.clientId, target.device.slotId]);
+  }
+  function updateBluetooth(status) {
+    if (modeInput.value !== "bluetooth") return;
+    socketState = status?.state === "ready" ? "paired" : status?.state || "idle";
+    const previous = bluetoothSelect.value;
+    bluetoothSelect.replaceChildren(new Option(t(status?.devices.length ? "\u9009\u62E9\u9644\u8FD1\u8BBE\u5907" : "\u5C1A\u672A\u53D1\u73B0\u8BBE\u5907"), ""));
+    for (const device of status?.devices || []) bluetoothSelect.add(new Option(`${device.name} \xB7 ${device.id.slice(0, 8)}`, device.id));
+    bluetoothSelect.value = status?.deviceId || (status?.devices.some((device) => device.id === previous) ? previous : status?.devices.length === 1 ? status.devices[0].id : "");
+    controller.setTarget(status?.state === "ready" && status.deviceId ? {
+      clientId: `bluetooth-${bluetooth.session}`,
+      device: {
+        type: types_DglabSocketDeviceType.COYOTE_030,
+        name: "Coyote 3.0",
+        slotId: status.deviceId,
+        props: { connectState: "connected", intensityA: status.intensityA, intensityB: status.intensityB },
+        slotState: { hasDevice: true, channelA: { intensityMax: status.capA }, channelB: { intensityMax: status.capB } }
+      }
+    } : null);
+    if (status?.error && status.error !== lastBluetoothError) showError(`bluetooth:${status.error}`);
+    lastBluetoothError = status?.error || null;
+    render();
   }
   function updateDevices() {
     targets = socket.clients.flatMap((client) => client.devices.filter((device) => device.type === "COYOTE_030").map((device) => ({ clientId: client.clientId, device })));
@@ -3994,9 +4211,13 @@
       await controller.stop(reason);
     } finally {
       socket.disconnect();
-      bridge?.postMessage("local-stop", {});
-      disconnecting = false;
-      render();
+      try {
+        await bluetooth.stop();
+      } finally {
+        bridge?.postMessage("local-stop", {});
+        disconnecting = false;
+        render();
+      }
     }
   }
   function startLocal() {
@@ -4019,7 +4240,7 @@
   }
   async function connect() {
     if (connecting || disconnecting) return;
-    if (socketState === "paired" || socketState === "waiting_for_peer") {
+    if (bluetooth.active || socketState === "paired" || socketState === "waiting_for_peer") {
       await disconnect("\u5DF2\u65AD\u5F00\u8FDE\u63A5");
       return;
     }
@@ -4030,12 +4251,23 @@
     render();
     socket.disconnect();
     try {
+      if (modeInput.value === "bluetooth") {
+        if (window.location.protocol !== "file:") throw new Error("\u8BF7\u5728 IINA \u63D2\u4EF6\u7A97\u53E3\u4E2D\u542F\u52A8\u84DD\u7259\u76F4\u8FDE\u3002");
+        await bluetooth.start(decodeURIComponent(new URL("CoyoteBluetooth.app", window.location.href).pathname));
+        if (generation !== connectionGeneration) {
+          await bluetooth.stop();
+          return;
+        }
+        await bluetooth.scan();
+        save();
+        return;
+      }
       const url = local ? await startLocal() : validateServer(serverInput.value);
       if (generation !== connectionGeneration) return;
       const current = new DglabSocket({ url, connectTimeout: 8e3, responseTimeout: RESPONSE_TIMEOUT_MS });
       socket = current;
       current.on("state", (state) => {
-        if (current !== socket) return;
+        if (current !== socket || modeInput.value === "bluetooth") return;
         socketState = state;
         if (state === "disconnected" || state === "idle") {
           if (local) bridge?.postMessage("local-stop", {});
@@ -4048,13 +4280,13 @@
         render();
       });
       current.on("devices", () => {
-        if (current === socket) updateDevices();
+        if (current === socket && modeInput.value !== "bluetooth") updateDevices();
       });
       current.on("client-disconnected", () => {
-        if (current === socket) updateDevices();
+        if (current === socket && modeInput.value !== "bluetooth") updateDevices();
       });
       current.on("error", (error) => {
-        if (current !== socket) return;
+        if (current !== socket || modeInput.value === "bluetooth") return;
         void controller.stop("\u8FDE\u63A5\u53D1\u751F\u9519\u8BEF\uFF0C\u8BF7\u68C0\u67E5 App");
         showError(error);
       });
@@ -4078,6 +4310,7 @@
     } catch (error) {
       if (generation === connectionGeneration) {
         socket.disconnect();
+        await bluetooth.stop();
         if (local) bridge?.postMessage("local-stop", {});
         throw error;
       }
@@ -4107,19 +4340,30 @@
     bridge?.postMessage("save", { settings: controller.settings, server: serverInput.value.trim(), connectionMode: modeInput.value, nodePath: nodeInput.value.trim() });
   }
   function render() {
+    const direct = modeInput.value === "bluetooth";
     const states = { idle: "\u672A\u8FDE\u63A5", connecting: "\u6B63\u5728\u8FDE\u63A5", waiting_for_peer: "\u7B49\u5F85 App \u914D\u5BF9", paired: "App \u5DF2\u8FDE\u63A5", disconnected: "\u8FDE\u63A5\u5DF2\u65AD\u5F00" };
-    $("connection-state").textContent = t(states[socketState] || socketState);
+    const directStates = { idle: "\u672A\u8FDE\u63A5", scanning: "\u6B63\u5728\u626B\u63CF", scanned: "\u8BF7\u9009\u62E9\u8BBE\u5907", connecting: "\u6B63\u5728\u8FDE\u63A5", paired: "\u84DD\u7259\u5DF2\u8FDE\u63A5", disconnecting: "\u6B63\u5728\u65AD\u5F00", disconnected: "\u8BBE\u5907\u5DF2\u79BB\u7EBF", error: "\u84DD\u7259\u8FDE\u63A5\u5F02\u5E38" };
+    $("connection-state").textContent = t((direct ? directStates : states)[socketState] || socketState);
     $("connection-state").classList.toggle("connected", socketState === "paired");
-    $("connect").textContent = t(connecting ? "\u8FDE\u63A5\u4E2D\u2026" : ["paired", "waiting_for_peer"].includes(socketState) ? "\u65AD\u5F00\u8FDE\u63A5" : "\u8FDE\u63A5 App");
+    $("connect").textContent = t(connecting ? "\u8FDE\u63A5\u4E2D\u2026" : bluetooth.active || ["paired", "waiting_for_peer"].includes(socketState) ? "\u65AD\u5F00\u8FDE\u63A5" : direct ? "\u626B\u63CF\u8BBE\u5907" : "\u8FDE\u63A5 App");
     $("connect").disabled = connecting || disconnecting;
-    serverInput.disabled = modeInput.disabled = nodeInput.disabled = connecting || disconnecting || ["paired", "waiting_for_peer"].includes(socketState);
+    serverInput.disabled = modeInput.disabled = nodeInput.disabled = connecting || disconnecting || bluetooth.active || ["paired", "waiting_for_peer"].includes(socketState);
     const local = modeInput.value === "local";
     $("local-settings").hidden = !local;
     $("remote-settings").hidden = local;
-    $("connection-hint").textContent = t(local ? "\u8FDE\u63A5\u540E\uFF0C\u5C06 Socket \u5730\u5740\u7C98\u8D34\u5230\u540C\u4E00\u53F0 Mac \u7684\u5B98\u65B9 App\u3002" : "\u8FDE\u63A5\u540E\uFF0C\u7528\u5B98\u65B9 App \u7684 Socket \u63A7\u5236\u626B\u7801\u6216\u7C98\u8D34\u5730\u5740\u914D\u5BF9\u3002");
+    $("connection-hint").textContent = t(direct ? "\u901A\u8FC7\u8FD9\u53F0 Mac \u7684\u84DD\u7259\u8FDE\u63A5\u90CA\u72FC 3.0\uFF0C\u65E0\u9700\u5B98\u65B9 App \u6216\u4E2D\u7EE7\u3002" : local ? "\u8FDE\u63A5\u540E\uFF0C\u5C06 Socket \u5730\u5740\u7C98\u8D34\u5230\u540C\u4E00\u53F0 Mac \u7684\u5B98\u65B9 App\u3002" : "\u8FDE\u63A5\u540E\uFF0C\u7528\u5B98\u65B9 App \u7684 Socket \u63A7\u5236\u626B\u7801\u6216\u7C98\u8D34\u5730\u5740\u914D\u5BF9\u3002");
+    $("bluetooth-controls").hidden = $("bluetooth-calibration").hidden = !direct;
+    $("app-settings").hidden = $("app-device").hidden = direct;
+    if (direct) $("pairing").hidden = true;
+    const bluetoothBusy = connecting || disconnecting || ["connecting", "ready", "disconnecting"].includes(bluetooth.status?.state || "");
+    bluetoothSelect.disabled = bluetoothBusy;
+    $("bluetooth-scan").disabled = !bluetooth.active || bluetoothBusy;
+    $("bluetooth-pair").disabled = !bluetooth.active || bluetoothBusy || !bluetoothSelect.value;
+    $("bluetooth-detail").textContent = bluetooth.status?.battery == null ? "" : t(`\u7535\u91CF ${bluetooth.status.battery}%`);
+    $("limit-hint").textContent = t(direct ? "\u76F4\u8FDE\u4F7F\u7528\u63D2\u4EF6\u8BBE\u7F6E\u7684\u901A\u9053\u4E0A\u9650\uFF1B\u9996\u6B21\u8FDE\u63A5\u4FDD\u6301\u96F6\u8F93\u51FA\u3002" : "\u5B9E\u9645\u901A\u9053\u5F3A\u5EA6\u4E0D\u4F1A\u8D85\u8FC7 App \u56DE\u4F20\u7684\u4E0A\u9650\u3002");
     $("dirty").textContent = t(dirty ? "\u4FEE\u6539\u5C1A\u672A\u5E94\u7528" : "\u53C2\u6570\u5DF2\u5E94\u7528");
     $("status").textContent = t(controller.reason) + (dirty ? ` \xB7 ${t("\u53C2\u6570\u5C1A\u672A\u5E94\u7528\uFF0C\u8BF7\u5148\u70B9\u300C\u5E94\u7528\u53C2\u6570\u300D\u3002")}` : "");
-    $("start").disabled = controller.armed || controller.starting || connecting || disconnecting || !controller.target || !hasSource || !supportsWindowTracking || dirty;
+    $("start").disabled = controller.armed || controller.starting || connecting || disconnecting || !controller.target || !isConnected(controller.target) || !hasSource || !supportsWindowTracking || dirty;
     $("start").textContent = t(controller.armed ? "\u8054\u52A8\u5DF2\u5F00\u542F" : controller.starting ? "\u6B63\u5728\u51C6\u5907\u2026" : dirty ? "\u8BF7\u5148\u5E94\u7528\u53C2\u6570" : "\u5F00\u59CB\u8054\u52A8");
     const sample = controller.sample?.preview;
     const number = (n, digits = 1) => typeof n === "number" && Number.isFinite(n) ? Math.max(-99, n).toFixed(digits) : "\u2014";
@@ -4130,7 +4374,7 @@
     $("signal-state").textContent = t(sample?.running ? `\u95E8\u9650 ${number(controller.previewWave?.gateDb)} dBFS \xB7 ${controller.previewWave?.gated ? "\u5173\u95ED" : "\u901A\u8FC7"}` : sample?.reason || "\u7B49\u5F85\u97F3\u9891");
     if (controller.sample) $("source").textContent = controller.sample.title;
     for (const [channel, id] of [[0, "channel-a"], [1, "channel-b"]]) {
-      $(id).textContent = t(controller.target ? `App \u5F53\u524D ${number(Number(controller.target.device.props?.[channel === 0 ? "intensityA" : "intensityB"]), 0)} / \u4E0A\u9650 ${channelLimit(controller.target, channel)}` : "\u7B49\u5F85 App \u56DE\u4F20\u4E0A\u9650");
+      $(id).textContent = t(controller.target ? `${direct ? "\u8BBE\u5907\u5F53\u524D" : "App \u5F53\u524D"} ${number(Number(controller.target.device.props?.[channel === 0 ? "intensityA" : "intensityB"]), 0)} / \u4E0A\u9650 ${channelLimit(controller.target, channel)}` : direct ? "\u7B49\u5F85\u84DD\u7259\u8BBE\u5907\u8FDE\u63A5" : "\u7B49\u5F85 App \u56DE\u4F20\u4E0A\u9650");
     }
     if (shownFailure !== controller.failure) {
       if (controller.failure) showError(controller.failure);
@@ -4176,6 +4420,13 @@
   $("connect").addEventListener("click", () => {
     void connect().catch(showError);
   });
+  $("bluetooth-scan").addEventListener("click", () => {
+    void bluetooth.scan().catch(showError);
+  });
+  $("bluetooth-pair").addEventListener("click", () => {
+    void bluetooth.connect(bluetoothSelect.value, controller.settings).catch(showError);
+  });
+  bluetoothSelect.addEventListener("change", render);
   languageInput.addEventListener("change", () => {
     language = languageInput.value;
     setLanguage(language, navigator.language);
@@ -4189,9 +4440,15 @@
     $("pairing-title").textContent = t(modeInput.value === "local" ? "\u672C\u673A\u8FDE\u63A5\u5730\u5740" : "\u914D\u5BF9\u4E8C\u7EF4\u7801\u4E0E\u8FDE\u63A5\u5730\u5740");
     $("pairing-hint").textContent = t(modeInput.value === "local" ? "\u590D\u5236\u4E0B\u65B9\u5730\u5740\u5230\u540C\u4E00\u53F0 Mac \u7684 App\u3002\u91CD\u65B0\u8FDE\u63A5\u540E\u9700\u4F7F\u7528\u65B0\u5730\u5740\u3002" : "\u624B\u673A\u53EF\u626B\u7801\uFF1B\u684C\u9762 App \u53EF\u590D\u5236\u4E0B\u65B9\u5730\u5740\u3002");
     $("copy").textContent = t("\u590D\u5236");
+    if (modeInput.value === "bluetooth") {
+      const first = bluetoothSelect.options[0];
+      if (first) first.text = t(bluetooth.status?.devices.length ? "\u9009\u62E9\u9644\u8FD1\u8BBE\u5907" : "\u5C1A\u672A\u53D1\u73B0\u8BBE\u5907");
+    }
     render();
   });
   modeInput.addEventListener("change", () => {
+    socketState = "idle";
+    controller.setTarget(null);
     render();
     save();
   });
@@ -4211,10 +4468,12 @@
     dirty = true;
     render();
   });
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      controller.configure(readSettings());
+      const settings = readSettings();
+      if (modeInput.value === "bluetooth" && bluetooth.active) await bluetooth.configure(settings);
+      controller.configure(settings);
       dirty = false;
       save();
       $("error").hidden = true;
@@ -4252,9 +4511,9 @@
         controller.configure(data.settings);
         populate(data.settings);
       }
-      if (!connecting && !["paired", "waiting_for_peer"].includes(socketState)) {
+      if (!connecting && !bluetooth.active && !["paired", "waiting_for_peer"].includes(socketState)) {
         serverInput.value = data.server;
-        modeInput.value = data.connectionMode === "local" ? "local" : "remote";
+        modeInput.value = ["local", "bluetooth"].includes(data.connectionMode) ? data.connectionMode : "remote";
         nodeInput.value = data.nodePath || "";
       }
       hasSource = data.hasSource;

@@ -9,7 +9,7 @@ await rm(staging, { recursive: true, force: true });
 await mkdir(staging, { recursive: true });
 await mkdir('artifacts', { recursive: true });
 // 一并提供可重建源码；不将 node_modules、开发配置或临时测试数据装入 IINA。
-for (const path of ['Info.json', 'dist', 'src', 'scripts', 'tests', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'licenses', 'package.json', 'package-lock.json', 'tsconfig.json']) {
+for (const path of ['Info.json', 'dist', 'src', 'native', 'scripts', 'tests', 'README.md', 'README.en.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'licenses', 'package.json', 'package-lock.json', 'tsconfig.json']) {
   await cp(path, resolve(staging, path), { recursive: true });
 }
 const artifact = resolve(`artifacts/iina-dglab-${info.version}.iinaplgz`);

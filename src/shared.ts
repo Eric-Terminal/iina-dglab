@@ -10,6 +10,8 @@ export const AUDIO_FILTER = `@${FILTER_LABEL}:lavfi=[${ASTATS_FILTER}]`;
 
 export interface Settings {
   advanceMs: number;
+  frequencyBalance: number;
+  pulseBalance: number;
   metric: 'hybrid' | 'rms' | 'peak';
   adaptiveGate: boolean;
   gateDb: number;
@@ -28,6 +30,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   advanceMs: 0,
+  frequencyBalance: 0, pulseBalance: 0,
   metric: 'hybrid', adaptiveGate: true, gateDb: -38, ceilingDb: -5, gamma: 1.1,
   zcrLow: 0.02, zcrHigh: 0.22, frequencyLow: 10, frequencyHigh: 100,
   modulationMax: 100, capA: 0, capB: 0, channelA: true, channelB: true,
@@ -38,6 +41,7 @@ export function validateSettings(value: unknown): Settings {
   const s = value as Settings;
   const ranges: [keyof Settings, number, number][] = [
     ['advanceMs', 0, 1000],
+    ['frequencyBalance', 0, 255], ['pulseBalance', 0, 255],
     ['gateDb', -90, -1], ['ceilingDb', -60, 0], ['gamma', 0.2, 3],
     ['zcrLow', 0, 1], ['zcrHigh', 0, 1], ['frequencyLow', 10, 100],
     ['frequencyHigh', 10, 100], ['modulationMax', 0, 100], ['capA', 0, 200], ['capB', 0, 200],
@@ -54,7 +58,7 @@ export function validateSettings(value: unknown): Settings {
   if (!['hybrid', 'rms', 'peak'].includes(s.metric) || typeof s.adaptiveGate !== 'boolean' || typeof s.channelA !== 'boolean' || typeof s.channelB !== 'boolean') {
     throw new Error('电平模式或通道选项无效。');
   }
-  return { ...s, capA: Math.floor(s.capA), capB: Math.floor(s.capB) };
+  return { ...s, capA: Math.floor(s.capA), capB: Math.floor(s.capB), frequencyBalance: Math.floor(s.frequencyBalance), pulseBalance: Math.floor(s.pulseBalance) };
 }
 
 export interface AudioReading {

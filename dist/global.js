@@ -8,6 +8,8 @@
   var AUDIO_FILTER = `@${FILTER_LABEL}:lavfi=[${ASTATS_FILTER}]`;
   var DEFAULT_SETTINGS = {
     advanceMs: 0,
+    frequencyBalance: 0,
+    pulseBalance: 0,
     metric: "hybrid",
     adaptiveGate: true,
     gateDb: -38,
@@ -28,6 +30,8 @@
     const s = value;
     const ranges = [
       ["advanceMs", 0, 1e3],
+      ["frequencyBalance", 0, 255],
+      ["pulseBalance", 0, 255],
       ["gateDb", -90, -1],
       ["ceilingDb", -60, 0],
       ["gamma", 0.2, 3],
@@ -51,7 +55,7 @@
     if (!["hybrid", "rms", "peak"].includes(s.metric) || typeof s.adaptiveGate !== "boolean" || typeof s.channelA !== "boolean" || typeof s.channelB !== "boolean") {
       throw new Error("\u7535\u5E73\u6A21\u5F0F\u6216\u901A\u9053\u9009\u9879\u65E0\u6548\u3002");
     }
-    return { ...s, capA: Math.floor(s.capA), capB: Math.floor(s.capB) };
+    return { ...s, capA: Math.floor(s.capA), capB: Math.floor(s.capB), frequencyBalance: Math.floor(s.frequencyBalance), pulseBalance: Math.floor(s.pulseBalance) };
   }
 
   // src/local-relay.ts
@@ -116,10 +120,168 @@
     }
   };
 
+  // src/bluetooth-helper.ts
+  var BluetoothHelper = class {
+    constructor(api) {
+      this.api = api;
+      this.url = null;
+      this.session = null;
+      this.generation = 0;
+      this.starting = false;
+      this.polling = false;
+    }
+    async start(appPath) {
+      if (this.starting || this.url) throw new Error("\u84DD\u7259\u52A9\u624B\u5DF2\u542F\u52A8");
+      if (!appPath.startsWith("/") || !appPath.endsWith("/dist/CoyoteBluetooth.app") || !this.api.file.exists(`${appPath}/Contents/MacOS/CoyoteBluetooth`)) {
+        throw new Error("\u627E\u4E0D\u5230\u84DD\u7259\u52A9\u624B\uFF0C\u8BF7\u91CD\u65B0\u5B89\u88C5\u63D2\u4EF6\u3002");
+      }
+      const generation = ++this.generation;
+      this.starting = true;
+      const session = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const handshake = `@tmp/bluetooth-${session}.json`;
+      try {
+        const result = await this.api.utils.exec("/usr/bin/open", ["-n", "-g", appPath, "--args", "--handshake", this.api.utils.resolvePath(handshake)]);
+        if (result.status !== 0) throw new Error("\u84DD\u7259\u52A9\u624B\u65E0\u6CD5\u542F\u52A8\uFF0C\u8BF7\u68C0\u67E5 macOS \u7684\u9690\u79C1\u4E0E\u5B89\u5168\u6027\u8BBE\u7F6E\u3002");
+        const deadline = Date.now() + 7e3;
+        while (!this.api.file.exists(handshake) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+        if (!this.api.file.exists(handshake)) throw new Error("\u84DD\u7259\u52A9\u624B\u542F\u52A8\u8D85\u65F6\uFF0C\u8BF7\u68C0\u67E5 macOS \u662F\u5426\u963B\u6B62\u4E86\u52A9\u624B\u542F\u52A8\u3002");
+        const info = JSON.parse(this.api.file.read(handshake) || "{}");
+        if (!info.url || !/^http:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{64}$/.test(info.url)) throw new Error("\u84DD\u7259\u52A9\u624B\u672A\u80FD\u542F\u52A8\u672C\u5730\u8FDE\u63A5\u3002");
+        if (generation !== this.generation) {
+          await this.post(info.url, "shutdown", {});
+          throw new Error("\u84DD\u7259\u8FDE\u63A5\u5DF2\u53D6\u6D88");
+        }
+        this.url = info.url;
+        this.session = session;
+        const status = await this.post(info.url, "status", {});
+        if (generation !== this.generation) throw new Error("\u84DD\u7259\u8FDE\u63A5\u5DF2\u53D6\u6D88");
+        return { session, status };
+      } catch (error) {
+        if (generation === this.generation) await this.stop();
+        throw error;
+      } finally {
+        this.starting = false;
+        if (this.api.file.exists(handshake)) this.api.file.delete(handshake);
+      }
+    }
+    async request(session, method, params) {
+      if (!this.url || session !== this.session) throw new Error("\u84DD\u7259\u4F1A\u8BDD\u5DF2\u7ED3\u675F\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5");
+      if (!["scan", "connect", "configure", "intensity", "pulse", "clear", "status", "disconnect"].includes(method)) throw new Error("\u65E0\u6548\u7684\u84DD\u7259\u8BF7\u6C42");
+      return this.post(this.url, method, params);
+    }
+    async poll() {
+      if (!this.url || !this.session || this.polling) return null;
+      const session = this.session, url = this.url;
+      this.polling = true;
+      try {
+        const status = await this.post(url, "status", {});
+        return session === this.session ? { session, status } : null;
+      } catch (error) {
+        if (session !== this.session) return null;
+        throw error;
+      } finally {
+        this.polling = false;
+      }
+    }
+    async keepAlive() {
+      const url = this.url;
+      if (!url) return;
+      try {
+        await this.post(url, "lease", {});
+      } catch (error) {
+        if (url === this.url) throw error;
+      }
+    }
+    async stop() {
+      this.generation++;
+      const url = this.url;
+      this.url = null;
+      this.session = null;
+      if (url) {
+        try {
+          await this.post(url, "shutdown", {});
+        } catch {
+        }
+      }
+    }
+    async post(url, method, params) {
+      let timer;
+      try {
+        const response = await Promise.race([
+          this.api.http.post(url, { headers: { "Content-Type": "application/json" }, params: {}, data: { method, params } }),
+          new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error("\u84DD\u7259\u52A9\u624B\u54CD\u5E94\u8D85\u65F6")), 2500);
+          })
+        ]);
+        if (response.statusCode !== 200) throw new Error("\u84DD\u7259\u52A9\u624B\u8FDE\u63A5\u5931\u8D25");
+        const data = JSON.parse(response.text);
+        if (data.error) throw new Error(`bluetooth:${data.error}`);
+        return data.result;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+  };
+
   // src/i18n.ts
   var english = {
     "\u90CA\u72FC\u97F3\u9891\u8054\u52A8": "Coyote Audio Link",
     "\u97F3\u9891\u8054\u52A8": "Audio Link",
+    "\u84DD\u7259\u76F4\u8FDE \xB7 \u65E0\u9700 App": "Direct Bluetooth \xB7 No app",
+    "\u9644\u8FD1\u7684\u90CA\u72FC 3.0": "Nearby Coyote 3.0 devices",
+    "\u70B9\u51FB\u626B\u63CF\u8BBE\u5907": "Click Scan devices",
+    "\u91CD\u65B0\u626B\u63CF": "Scan again",
+    "\u8FDE\u63A5\u8BBE\u5907": "Connect device",
+    "\u626B\u63CF\u8BBE\u5907": "Scan devices",
+    "\u9009\u62E9\u9644\u8FD1\u8BBE\u5907": "Select a nearby device",
+    "\u5C1A\u672A\u53D1\u73B0\u8BBE\u5907": "No devices found yet",
+    "\u7B49\u5F85\u84DD\u7259\u8BBE\u5907\u8FDE\u63A5": "Waiting for Bluetooth device",
+    "\u6B63\u5728\u626B\u63CF": "Scanning",
+    "\u8BF7\u9009\u62E9\u8BBE\u5907": "Select a device",
+    "\u84DD\u7259\u5DF2\u8FDE\u63A5": "Bluetooth connected",
+    "\u6B63\u5728\u65AD\u5F00": "Disconnecting",
+    "\u84DD\u7259\u8FDE\u63A5\u5F02\u5E38": "Bluetooth error",
+    "\u901A\u8FC7\u8FD9\u53F0 Mac \u7684\u84DD\u7259\u8FDE\u63A5\u90CA\u72FC 3.0\uFF0C\u65E0\u9700\u5B98\u65B9 App \u6216\u4E2D\u7EE7\u3002": "Connect Coyote 3.0 through this Mac\u2019s Bluetooth. No official app or relay required.",
+    "\u8BF7\u5148\u65AD\u5F00\u5B98\u65B9 App \u5BF9\u8BBE\u5907\u7684\u84DD\u7259\u8FDE\u63A5\uFF0C\u5E76\u5141\u8BB8\u84DD\u7259\u52A9\u624B\u8BBF\u95EE\u84DD\u7259\u3002\u8FDE\u63A5\u540E\u9700\u624B\u52A8\u5F00\u542F\u8054\u52A8\u3002": "Disconnect the device from the official app first and allow Bluetooth access for the helper. Enable Audio Link manually after connecting.",
+    "\u76F4\u8FDE\u8BBE\u5907\u6821\u51C6": "Direct connection calibration",
+    "\u9891\u7387\u5E73\u8861": "Frequency balance",
+    "\u8109\u5BBD\u5E73\u8861": "Pulse-width balance",
+    "\u4E24\u901A\u9053\u5171\u7528\u8FD9\u7EC4\u6821\u51C6\uFF0C\u9ED8\u8BA4\u5747\u4E3A 0\u3002\u76F4\u8FDE\u4F1A\u5199\u5165\u63D2\u4EF6\u7684\u901A\u9053\u4E0A\u9650\u4E0E\u6821\u51C6\uFF0C\u8BBE\u5907\u4F1A\u4FDD\u5B58\u8FD9\u4E9B\u503C\u3002": "Both channels use these values, initially 0. Direct connection writes the plugin\u2019s intensity limits and calibration to the device, which stores them.",
+    "\u76F4\u8FDE\u4F7F\u7528\u63D2\u4EF6\u8BBE\u7F6E\u7684\u901A\u9053\u4E0A\u9650\uFF1B\u9996\u6B21\u8FDE\u63A5\u4FDD\u6301\u96F6\u8F93\u51FA\u3002": "Direct connection uses the plugin\u2019s intensity limits. Connecting keeps output at zero.",
+    "\u7535\u91CF {value}%": "Battery {value}%",
+    "\u8BBE\u5907\u5F53\u524D {value} / \u4E0A\u9650 {limit}": "Device intensity {value} / limit {limit}",
+    "\u8BF7\u5728 IINA \u63D2\u4EF6\u7A97\u53E3\u4E2D\u542F\u52A8\u84DD\u7259\u76F4\u8FDE\u3002": "Start direct Bluetooth from the IINA plugin window.",
+    "\u84DD\u7259\u52A9\u624B\u5DF2\u542F\u52A8": "The Bluetooth helper is already running",
+    "\u627E\u4E0D\u5230\u84DD\u7259\u52A9\u624B\uFF0C\u8BF7\u91CD\u65B0\u5B89\u88C5\u63D2\u4EF6\u3002": "The Bluetooth helper is missing. Reinstall the plugin.",
+    "\u84DD\u7259\u52A9\u624B\u65E0\u6CD5\u542F\u52A8\uFF0C\u8BF7\u68C0\u67E5 macOS \u7684\u9690\u79C1\u4E0E\u5B89\u5168\u6027\u8BBE\u7F6E\u3002": "The Bluetooth helper could not launch. Check macOS Privacy & Security settings.",
+    "\u84DD\u7259\u52A9\u624B\u542F\u52A8\u8D85\u65F6\uFF0C\u8BF7\u68C0\u67E5 macOS \u662F\u5426\u963B\u6B62\u4E86\u52A9\u624B\u542F\u52A8\u3002": "Bluetooth helper startup timed out. Check whether macOS blocked its launch.",
+    "\u84DD\u7259\u52A9\u624B\u672A\u80FD\u542F\u52A8\u672C\u5730\u8FDE\u63A5\u3002": "The Bluetooth helper could not start its local connection.",
+    "\u84DD\u7259\u8FDE\u63A5\u5DF2\u53D6\u6D88": "Bluetooth connection cancelled",
+    "\u84DD\u7259\u4F1A\u8BDD\u5DF2\u7ED3\u675F\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5": "Bluetooth session ended. Reconnect.",
+    "\u65E0\u6548\u7684\u84DD\u7259\u8BF7\u6C42": "Invalid Bluetooth request",
+    "\u84DD\u7259\u52A9\u624B\u54CD\u5E94\u8D85\u65F6": "Bluetooth helper response timed out",
+    "\u84DD\u7259\u52A9\u624B\u8FDE\u63A5\u5931\u8D25": "Bluetooth helper connection failed",
+    "\u8BF7\u5728\u7CFB\u7EDF\u8BBE\u7F6E\u4E2D\u5141\u8BB8\u90CA\u72FC\u84DD\u7259\u52A9\u624B\u8BBF\u95EE\u84DD\u7259\u3002": "Allow Coyote Bluetooth to access Bluetooth in System Settings.",
+    "\u84DD\u7259\u5DF2\u5173\u95ED\uFF0C\u8BF7\u6253\u5F00\u8FD9\u53F0 Mac \u7684\u84DD\u7259\u3002": "Bluetooth is off. Turn on Bluetooth on this Mac.",
+    "\u8FD9\u53F0 Mac \u65E0\u6CD5\u4F7F\u7528\u4F4E\u529F\u8017\u84DD\u7259\u3002": "Bluetooth Low Energy is unavailable on this Mac.",
+    "\u84DD\u7259\u6B63\u5728\u91CD\u7F6E\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5\u3002": "Bluetooth is resetting. Reconnect.",
+    "\u84DD\u7259\u5C1A\u672A\u5C31\u7EEA\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002": "Bluetooth is not ready. Try again shortly.",
+    "\u8BBE\u5907\u5DF2\u8FDE\u63A5\uFF0C\u8BF7\u5148\u65AD\u5F00\u3002": "A device is already connected. Disconnect it first.",
+    "\u672A\u627E\u5230\u6240\u9009\u8BBE\u5907\uFF0C\u8BF7\u91CD\u65B0\u626B\u63CF\u3002": "The selected device was not found. Scan again.",
+    "\u8BBE\u5907\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u786E\u8BA4\u8BBE\u5907\u5DF2\u5F00\u673A\u4E14\u672A\u88AB\u5176\u4ED6 App \u5360\u7528\u3002": "Connection failed. Make sure the device is on and disconnected from other apps.",
+    "\u8FDE\u63A5\u8BBE\u5907\u8D85\u65F6\uFF0C\u8BF7\u65AD\u5F00\u5176\u4ED6 App \u540E\u91CD\u8BD5\u3002": "Device connection timed out. Disconnect other apps and try again.",
+    "\u8BBE\u5907\u672A\u63D0\u4F9B\u90CA\u72FC 3.0 \u6240\u9700\u7684\u84DD\u7259\u670D\u52A1\u3002": "The device does not provide the required Coyote 3.0 Bluetooth services.",
+    "\u65E0\u6CD5\u8BA2\u9605\u8BBE\u5907\u786E\u8BA4\u901A\u77E5\u3002": "Could not subscribe to device acknowledgements.",
+    "\u8BBE\u5907\u672A\u786E\u8BA4\u5F52\u96F6\uFF0C\u8FDE\u63A5\u5DF2\u505C\u6B62\u3002": "The device did not confirm zero intensity. Connection stopped.",
+    "\u8BBE\u5907\u5C1A\u672A\u5C31\u7EEA\uFF0C\u8BF7\u5148\u8FDE\u63A5\u3002": "The device is not ready. Connect it first.",
+    "\u8BBE\u5907\u5F3A\u5EA6\u786E\u8BA4\u8D85\u65F6\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002": "Device intensity acknowledgement timed out. Direct connection stopped.",
+    "\u84DD\u7259\u5199\u5165\u5931\u8D25\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002": "Bluetooth write failed. Direct connection stopped.",
+    "\u84DD\u7259\u5199\u5165\u8D85\u65F6\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002": "Bluetooth write timed out. Direct connection stopped.",
+    "\u84DD\u7259\u5199\u5165\u961F\u5217\u62E5\u585E\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002": "The Bluetooth write queue is congested. Direct connection stopped.",
+    "\u76F4\u8FDE\u53C2\u6570\u65E0\u6548": "Invalid direct connection settings",
+    "\u6CE2\u5F62\u6570\u636E\u65E0\u6548": "Invalid waveform data",
+    "\u84DD\u7259\u547D\u4EE4\u53C2\u6570\u65E0\u6548": "Invalid Bluetooth command parameters",
+    "\u84DD\u7259\u52A9\u624B\u6B63\u5728\u9000\u51FA": "The Bluetooth helper is shutting down",
     "\u8BED\u8A00": "Language",
     "\u8DDF\u968F\u7CFB\u7EDF": "System default",
     "\u672A\u8FDE\u63A5": "Disconnected",
@@ -224,12 +386,12 @@
     "\u8BBE\u5907\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8": "Device changed. Enable Audio Link again.",
     "\u8BBE\u5907\u5DF2\u79BB\u7EBF": "Device disconnected",
     "\u53C2\u6570\u5DF2\u5E94\u7528\uFF0C\u7EE7\u7EED\u8054\u52A8": "Settings applied; Audio Link remains enabled",
-    "\u4E0A\u6B21\u505C\u6B62\u64CD\u4F5C\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u68C0\u67E5 App \u540E\u65AD\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5\u3002": "The last stop was not acknowledged. Check the device connection, then disconnect and reconnect.",
-    "\u8BF7\u5148\u8FDE\u63A5 App \u5E76\u9009\u62E9\u5728\u7EBF\u7684\u90CA\u72FC 3.0\u3002": "Connect and select an online Coyote 3.0 first.",
-    "\u8BF7\u8BBE\u7F6E\u81F3\u5C11\u4E00\u4E2A\u901A\u9053\u7684\u5F3A\u5EA6\u4E0A\u9650\uFF0C\u5E76\u786E\u8BA4 App \u5DF2\u56DE\u4F20\u975E\u96F6\u4E0A\u9650\u3002": "Set a positive intensity limit for at least one channel and check its connection limits.",
+    "\u4E0A\u6B21\u505C\u6B62\u64CD\u4F5C\u672A\u83B7\u786E\u8BA4\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u5907\u8FDE\u63A5\u540E\u65AD\u5F00\u5E76\u91CD\u65B0\u8FDE\u63A5\u3002": "The last stop was not acknowledged. Check the device connection, then disconnect and reconnect.",
+    "\u8BF7\u5148\u8FDE\u63A5\u5E76\u9009\u62E9\u5728\u7EBF\u7684\u90CA\u72FC 3.0\u3002": "Connect and select an online Coyote 3.0 first.",
+    "\u8BF7\u8BBE\u7F6E\u81F3\u5C11\u4E00\u4E2A\u901A\u9053\u7684\u975E\u96F6\u5F3A\u5EA6\u4E0A\u9650\uFF0C\u5E76\u68C0\u67E5\u8BBE\u5907\u901A\u9053\u72B6\u6001\u3002": "Set a positive intensity limit for at least one channel and check its connection limits.",
     "\u8054\u52A8\u5DF2\u5C31\u7EEA": "Audio Link is ready",
     "\u8054\u52A8\u5DF2\u5F00\u542F\uFF0C\u7B49\u5F85\u97F3\u9891": "Audio Link enabled; waiting for audio",
-    "\u6240\u9009\u901A\u9053\u4E0D\u53EF\u8F93\u51FA\uFF0C\u8BF7\u68C0\u67E5 App \u4E0A\u9650\u548C\u9759\u97F3\u72B6\u6001": "Selected channels cannot output. Check intensity limits and mute state.",
+    "\u6240\u9009\u901A\u9053\u4E0D\u53EF\u8F93\u51FA\uFF0C\u8BF7\u68C0\u67E5\u4E0A\u9650\u548C\u9759\u97F3\u72B6\u6001": "Selected channels cannot output. Check intensity limits and mute state.",
     "\u901A\u9053\u72B6\u6001\u5DF2\u6539\u53D8": "Channel state changed",
     "\u6B63\u5728\u8DDF\u968F\u97F3\u9891": "Following audio",
     "\u4F4E\u4E8E\u566A\u58F0\u95E8\u9650": "Below noise gate",
@@ -288,6 +450,30 @@
     "{name}: \u88AB\u63A7\u65B9\u5DF2\u65AD\u5F00": "{name}: The controlled app disconnected"
   };
   var locale = "zh-CN";
+  var bluetoothErrors = {
+    "bluetooth-denied": "\u8BF7\u5728\u7CFB\u7EDF\u8BBE\u7F6E\u4E2D\u5141\u8BB8\u90CA\u72FC\u84DD\u7259\u52A9\u624B\u8BBF\u95EE\u84DD\u7259\u3002",
+    "bluetooth-off": "\u84DD\u7259\u5DF2\u5173\u95ED\uFF0C\u8BF7\u6253\u5F00\u8FD9\u53F0 Mac \u7684\u84DD\u7259\u3002",
+    "bluetooth-unsupported": "\u8FD9\u53F0 Mac \u65E0\u6CD5\u4F7F\u7528\u4F4E\u529F\u8017\u84DD\u7259\u3002",
+    "bluetooth-reset": "\u84DD\u7259\u6B63\u5728\u91CD\u7F6E\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5\u3002",
+    "bluetooth-unavailable": "\u84DD\u7259\u5C1A\u672A\u5C31\u7EEA\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",
+    "already-connected": "\u8BBE\u5907\u5DF2\u8FDE\u63A5\uFF0C\u8BF7\u5148\u65AD\u5F00\u3002",
+    "device-not-found": "\u672A\u627E\u5230\u6240\u9009\u8BBE\u5907\uFF0C\u8BF7\u91CD\u65B0\u626B\u63CF\u3002",
+    "device-connect-failed": "\u8BBE\u5907\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u786E\u8BA4\u8BBE\u5907\u5DF2\u5F00\u673A\u4E14\u672A\u88AB\u5176\u4ED6 App \u5360\u7528\u3002",
+    "device-connect-timeout": "\u8FDE\u63A5\u8BBE\u5907\u8D85\u65F6\uFF0C\u8BF7\u65AD\u5F00\u5176\u4ED6 App \u540E\u91CD\u8BD5\u3002",
+    "device-incompatible": "\u8BBE\u5907\u672A\u63D0\u4F9B\u90CA\u72FC 3.0 \u6240\u9700\u7684\u84DD\u7259\u670D\u52A1\u3002",
+    "device-notify-failed": "\u65E0\u6CD5\u8BA2\u9605\u8BBE\u5907\u786E\u8BA4\u901A\u77E5\u3002",
+    "device-zero-failed": "\u8BBE\u5907\u672A\u786E\u8BA4\u5F52\u96F6\uFF0C\u8FDE\u63A5\u5DF2\u505C\u6B62\u3002",
+    "device-not-ready": "\u8BBE\u5907\u5C1A\u672A\u5C31\u7EEA\uFF0C\u8BF7\u5148\u8FDE\u63A5\u3002",
+    "device-ack-timeout": "\u8BBE\u5907\u5F3A\u5EA6\u786E\u8BA4\u8D85\u65F6\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002",
+    "device-write-failed": "\u84DD\u7259\u5199\u5165\u5931\u8D25\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002",
+    "device-write-timeout": "\u84DD\u7259\u5199\u5165\u8D85\u65F6\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002",
+    "device-write-overflow": "\u84DD\u7259\u5199\u5165\u961F\u5217\u62E5\u585E\uFF0C\u5DF2\u505C\u6B62\u76F4\u8FDE\u3002",
+    "invalid-settings": "\u76F4\u8FDE\u53C2\u6570\u65E0\u6548",
+    "invalid-frame": "\u6CE2\u5F62\u6570\u636E\u65E0\u6548",
+    "invalid-command": "\u84DD\u7259\u547D\u4EE4\u53C2\u6570\u65E0\u6548",
+    "unknown-method": "\u65E0\u6548\u7684\u84DD\u7259\u8BF7\u6C42",
+    "helper-stopping": "\u84DD\u7259\u52A9\u624B\u6B63\u5728\u9000\u51FA"
+  };
   function resolveLanguage(value, systemLocale) {
     if (value === "en" || value === "zh-CN") return value;
     return systemLocale.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
@@ -305,6 +491,7 @@
     return { pattern: new RegExp(`^${escaped}$`), value, fields };
   });
   function t(message) {
+    message = message.replace(/bluetooth:([a-z-]+)/g, (source, code) => bluetoothErrors[code] || source);
     if (locale === "zh-CN") return message;
     if (english[message]) return english[message];
     if (message.includes("\n")) return message.split("\n").map(t).join("\n");
@@ -336,9 +523,10 @@
   }
   var savedServer = preferences.get("server");
   var server = typeof savedServer === "string" ? savedServer : OFFICIAL_SERVER;
-  var connectionMode = preferences.get("connectionMode") === "local" ? "local" : "remote";
+  var connectionMode = ["local", "bluetooth"].includes(preferences.get("connectionMode")) ? preferences.get("connectionMode") : "remote";
   var nodePath = String(preferences.get("nodePath") || "");
   var relay = new LocalRelay(iina);
+  var bluetooth = new BluetoothHelper(iina);
   var relayGeneration = 0;
   window.loadFile("dist/ui.html");
   window.setProperty({ title: t("\u97F3\u9891\u8054\u52A8"), resizable: true });
@@ -402,7 +590,7 @@
       server = data.server;
       preferences.set("settings", settings);
       preferences.set("server", server);
-      connectionMode = data.connectionMode === "local" ? "local" : "remote";
+      connectionMode = ["local", "bluetooth"].includes(data.connectionMode) ? data.connectionMode : "remote";
       nodePath = data.nodePath.trim();
       preferences.set("connectionMode", connectionMode);
       preferences.set("nodePath", nodePath);
@@ -424,9 +612,35 @@
     relayGeneration++;
     void relay.stop();
   });
+  window.onMessage("bluetooth", async (data) => {
+    try {
+      let result;
+      if (data.method === "start") result = await bluetooth.start(String(data.params.appPath || ""));
+      else if (data.method === "stop") {
+        await bluetooth.stop();
+        result = {};
+      } else result = await bluetooth.request(data.session, data.method, data.params);
+      window.postMessage("bluetooth-result", { id: data.id, result });
+    } catch (error) {
+      window.postMessage("bluetooth-result", { id: data.id, error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  setInterval(() => {
+    if (!windowAPI.isOpen?.()) return;
+    void bluetooth.poll().then((result) => {
+      if (result) window.postMessage("bluetooth-status", result);
+    }).catch((error) => {
+      window.postMessage("disconnect", { reason: String(error) });
+      void bluetooth.stop();
+    });
+  }, 500);
   setInterval(() => {
     const generation = relayGeneration;
     if (!windowAPI.isOpen?.()) return;
+    void bluetooth.keepAlive().catch((error) => {
+      window.postMessage("disconnect", { reason: String(error) });
+      void bluetooth.stop();
+    });
     void relay.keepAlive().catch(() => {
       if (generation !== relayGeneration) return;
       relayGeneration++;
@@ -442,7 +656,10 @@
       lastSample = void 0;
       const generation = ++relayGeneration;
       setTimeout(() => {
-        if (generation === relayGeneration) void relay.stop();
+        if (generation === relayGeneration) {
+          void relay.stop();
+          void bluetooth.stop();
+        }
       }, 1500);
     }
     windowWasOpen = visible;

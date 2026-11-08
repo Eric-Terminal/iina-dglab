@@ -1,8 +1,10 @@
-import { DglabSocket } from 'dglab-kit';
+import { DglabSocket, DglabSocketDeviceType } from 'dglab-kit';
 import QRCode from 'qrcode';
 import { AudioController, channelLimit, isConnected, type Target, type Transport } from './controller';
 import { DEFAULT_SETTINGS, OFFICIAL_SERVER, RESPONSE_TIMEOUT_MS, validateSettings, type AudioSample, type Settings } from './shared';
 import { bindDocumentLanguage, setLanguage, getLocale, t, type Language } from './i18n';
+import { BluetoothTransport } from './bluetooth-transport';
+import type { BluetoothStatus } from './bluetooth-helper';
 
 interface Bridge {
   postMessage(name: string, data?: unknown): void;
@@ -15,6 +17,7 @@ const serverInput = $<HTMLInputElement>('server');
 const modeInput = $<HTMLSelectElement>('connection-mode');
 const nodeInput = $<HTMLInputElement>('node-path');
 const deviceSelect = $<HTMLSelectElement>('device');
+const bluetoothSelect = $<HTMLSelectElement>('bluetooth-device');
 const languageInput = $<HTMLSelectElement>('language');
 const translateDocument = bindDocumentLanguage(document);
 let language: Language = 'system';
@@ -32,11 +35,14 @@ let disconnecting = false;
 let connectionGeneration = 0;
 let localResult: ((data: { url?: string; error?: string }) => void) | undefined;
 const samples: (number | null)[] = [];
+const bluetooth = new BluetoothTransport(bridge, updateBluetooth);
+let lastBluetoothError: string | null = null;
+const activeTransport = (): Transport => modeInput.value === 'bluetooth' ? bluetooth : socket;
 const transport: Transport = {
-  sendPulse: (...args) => socket.sendPulse(...args),
-  setTempIntensity: (...args) => socket.setTempIntensity(...args),
-  clearOperate: (...args) => socket.clearOperate(...args),
-  resetIntensity: (...args) => socket.resetIntensity(...args),
+  sendPulse: (...args) => activeTransport().sendPulse(...args),
+  setTempIntensity: (...args) => activeTransport().setTempIntensity(...args),
+  clearOperate: (...args) => activeTransport().clearOperate(...args),
+  resetIntensity: (...args) => activeTransport().resetIntensity(...args),
 };
 const controller = new AudioController(transport, render);
 
@@ -47,6 +53,26 @@ function showError(error: unknown): void {
 }
 
 function key(target: Target): string { return JSON.stringify([target.clientId, target.device.slotId]); }
+
+function updateBluetooth(status: BluetoothStatus | null): void {
+  if (modeInput.value !== 'bluetooth') return;
+  socketState = status?.state === 'ready' ? 'paired' : status?.state || 'idle';
+  const previous = bluetoothSelect.value;
+  bluetoothSelect.replaceChildren(new Option(t(status?.devices.length ? '选择附近设备' : '尚未发现设备'), ''));
+  for (const device of status?.devices || []) bluetoothSelect.add(new Option(`${device.name} · ${device.id.slice(0, 8)}`, device.id));
+  bluetoothSelect.value = status?.deviceId || (status?.devices.some(device => device.id === previous) ? previous : status?.devices.length === 1 ? status.devices[0].id : '');
+  controller.setTarget(status?.state === 'ready' && status.deviceId ? {
+    clientId: `bluetooth-${bluetooth.session}`,
+    device: {
+      type: DglabSocketDeviceType.COYOTE_030, name: 'Coyote 3.0', slotId: status.deviceId,
+      props: { connectState: 'connected', intensityA: status.intensityA, intensityB: status.intensityB },
+      slotState: { hasDevice: true, channelA: { intensityMax: status.capA }, channelB: { intensityMax: status.capB } },
+    },
+  } : null);
+  if (status?.error && status.error !== lastBluetoothError) showError(`bluetooth:${status.error}`);
+  lastBluetoothError = status?.error || null;
+  render();
+}
 
 function updateDevices(): void {
   targets = socket.clients.flatMap(client => client.devices
@@ -82,9 +108,12 @@ async function disconnect(reason: string): Promise<void> {
   try { await controller.stop(reason); }
   finally {
     socket.disconnect();
-    bridge?.postMessage('local-stop', {});
-    disconnecting = false;
-    render();
+    try { await bluetooth.stop(); }
+    finally {
+      bridge?.postMessage('local-stop', {});
+      disconnecting = false;
+      render();
+    }
   }
 }
 
@@ -109,7 +138,7 @@ function startLocal(): Promise<string> {
 
 async function connect(): Promise<void> {
   if (connecting || disconnecting) return;
-  if (socketState === 'paired' || socketState === 'waiting_for_peer') {
+  if (bluetooth.active || socketState === 'paired' || socketState === 'waiting_for_peer') {
     await disconnect('已断开连接');
     return;
   }
@@ -120,12 +149,18 @@ async function connect(): Promise<void> {
   render();
   socket.disconnect();
   try {
+    if (modeInput.value === 'bluetooth') {
+      if (window.location.protocol !== 'file:') throw new Error('请在 IINA 插件窗口中启动蓝牙直连。');
+      await bluetooth.start(decodeURIComponent(new URL('CoyoteBluetooth.app', window.location.href).pathname));
+      if (generation !== connectionGeneration) { await bluetooth.stop(); return; }
+      await bluetooth.scan(); save(); return;
+    }
     const url = local ? await startLocal() : validateServer(serverInput.value);
     if (generation !== connectionGeneration) return;
     const current = new DglabSocket({ url, connectTimeout: 8000, responseTimeout: RESPONSE_TIMEOUT_MS });
     socket = current;
     current.on('state', state => {
-      if (current !== socket) return;
+      if (current !== socket || modeInput.value === 'bluetooth') return;
       socketState = state;
       if (state === 'disconnected' || state === 'idle') {
         if (local) bridge?.postMessage('local-stop', {});
@@ -137,13 +172,13 @@ async function connect(): Promise<void> {
       }
       render();
     });
-    current.on('devices', () => { if (current === socket) updateDevices(); });
+    current.on('devices', () => { if (current === socket && modeInput.value !== 'bluetooth') updateDevices(); });
     current.on('client-disconnected', () => {
-      if (current === socket) updateDevices();
+      if (current === socket && modeInput.value !== 'bluetooth') updateDevices();
     });
     // 使用 App 的完整 snapshot 与 patch；devices.get 只有设备描述，会丢失通道上限快照。
     current.on('error', error => {
-      if (current !== socket) return;
+      if (current !== socket || modeInput.value === 'bluetooth') return;
       void controller.stop('连接发生错误，请检查 App');
       showError(error);
     });
@@ -167,6 +202,7 @@ async function connect(): Promise<void> {
   } catch (error) {
     if (generation === connectionGeneration) {
       socket.disconnect();
+      await bluetooth.stop();
       if (local) bridge?.postMessage('local-stop', {});
       throw error;
     }
@@ -197,19 +233,30 @@ function save(): void {
 }
 
 function render(): void {
+  const direct = modeInput.value === 'bluetooth';
   const states: Record<string, string> = { idle: '未连接', connecting: '正在连接', waiting_for_peer: '等待 App 配对', paired: 'App 已连接', disconnected: '连接已断开' };
-  $('connection-state').textContent = t(states[socketState] || socketState);
+  const directStates: Record<string, string> = { idle: '未连接', scanning: '正在扫描', scanned: '请选择设备', connecting: '正在连接', paired: '蓝牙已连接', disconnecting: '正在断开', disconnected: '设备已离线', error: '蓝牙连接异常' };
+  $('connection-state').textContent = t((direct ? directStates : states)[socketState] || socketState);
   $('connection-state').classList.toggle('connected', socketState === 'paired');
-  $<HTMLButtonElement>('connect').textContent = t(connecting ? '连接中…' : ['paired', 'waiting_for_peer'].includes(socketState) ? '断开连接' : '连接 App');
+  $<HTMLButtonElement>('connect').textContent = t(connecting ? '连接中…' : bluetooth.active || ['paired', 'waiting_for_peer'].includes(socketState) ? '断开连接' : direct ? '扫描设备' : '连接 App');
   $<HTMLButtonElement>('connect').disabled = connecting || disconnecting;
-  serverInput.disabled = modeInput.disabled = nodeInput.disabled = connecting || disconnecting || ['paired', 'waiting_for_peer'].includes(socketState);
+  serverInput.disabled = modeInput.disabled = nodeInput.disabled = connecting || disconnecting || bluetooth.active || ['paired', 'waiting_for_peer'].includes(socketState);
   const local = modeInput.value === 'local';
   $('local-settings').hidden = !local;
   $('remote-settings').hidden = local;
-  $('connection-hint').textContent = t(local ? '连接后，将 Socket 地址粘贴到同一台 Mac 的官方 App。' : '连接后，用官方 App 的 Socket 控制扫码或粘贴地址配对。');
+  $('connection-hint').textContent = t(direct ? '通过这台 Mac 的蓝牙连接郊狼 3.0，无需官方 App 或中继。' : local ? '连接后，将 Socket 地址粘贴到同一台 Mac 的官方 App。' : '连接后，用官方 App 的 Socket 控制扫码或粘贴地址配对。');
+  $('bluetooth-controls').hidden = $('bluetooth-calibration').hidden = !direct;
+  $('app-settings').hidden = $('app-device').hidden = direct;
+  if (direct) $('pairing').hidden = true;
+  const bluetoothBusy = connecting || disconnecting || ['connecting', 'ready', 'disconnecting'].includes(bluetooth.status?.state || '');
+  bluetoothSelect.disabled = bluetoothBusy;
+  $<HTMLButtonElement>('bluetooth-scan').disabled = !bluetooth.active || bluetoothBusy;
+  $<HTMLButtonElement>('bluetooth-pair').disabled = !bluetooth.active || bluetoothBusy || !bluetoothSelect.value;
+  $('bluetooth-detail').textContent = bluetooth.status?.battery == null ? '' : t(`电量 ${bluetooth.status.battery}%`);
+  $('limit-hint').textContent = t(direct ? '直连使用插件设置的通道上限；首次连接保持零输出。' : '实际通道强度不会超过 App 回传的上限。');
   $('dirty').textContent = t(dirty ? '修改尚未应用' : '参数已应用');
   $('status').textContent = t(controller.reason) + (dirty ? ` · ${t('参数尚未应用，请先点「应用参数」。')}` : '');
-  $<HTMLButtonElement>('start').disabled = controller.armed || controller.starting || connecting || disconnecting || !controller.target || !hasSource || !supportsWindowTracking || dirty;
+  $<HTMLButtonElement>('start').disabled = controller.armed || controller.starting || connecting || disconnecting || !controller.target || !isConnected(controller.target) || !hasSource || !supportsWindowTracking || dirty;
   $('start').textContent = t(controller.armed ? '联动已开启' : controller.starting ? '正在准备…' : dirty ? '请先应用参数' : '开始联动');
   const sample = controller.sample?.preview;
   const number = (n: number | null | undefined, digits = 1) => typeof n === 'number' && Number.isFinite(n) ? Math.max(-99, n).toFixed(digits) : '—';
@@ -221,8 +268,8 @@ function render(): void {
   if (controller.sample) $('source').textContent = controller.sample.title;
   for (const [channel, id] of [[0, 'channel-a'], [1, 'channel-b']] as const) {
     $(id).textContent = t(controller.target
-      ? `App 当前 ${number(Number(controller.target.device.props?.[channel === 0 ? 'intensityA' : 'intensityB']), 0)} / 上限 ${channelLimit(controller.target, channel)}`
-      : '等待 App 回传上限');
+      ? `${direct ? '设备当前' : 'App 当前'} ${number(Number(controller.target.device.props?.[channel === 0 ? 'intensityA' : 'intensityB']), 0)} / 上限 ${channelLimit(controller.target, channel)}`
+      : direct ? '等待蓝牙设备连接' : '等待 App 回传上限');
   }
   if (shownFailure !== controller.failure) {
     if (controller.failure) showError(controller.failure);
@@ -258,6 +305,9 @@ function drawScope(): void {
 }
 
 $('connect').addEventListener('click', () => { void connect().catch(showError); });
+$('bluetooth-scan').addEventListener('click', () => { void bluetooth.scan().catch(showError); });
+$('bluetooth-pair').addEventListener('click', () => { void bluetooth.connect(bluetoothSelect.value, controller.settings).catch(showError); });
+bluetoothSelect.addEventListener('change', render);
 languageInput.addEventListener('change', () => {
   language = languageInput.value as Language;
   setLanguage(language, navigator.language); translateDocument();
@@ -271,9 +321,13 @@ languageInput.addEventListener('change', () => {
   $('pairing-title').textContent = t(modeInput.value === 'local' ? '本机连接地址' : '配对二维码与连接地址');
   $('pairing-hint').textContent = t(modeInput.value === 'local' ? '复制下方地址到同一台 Mac 的 App。重新连接后需使用新地址。' : '手机可扫码；桌面 App 可复制下方地址。');
   $('copy').textContent = t('复制');
+  if (modeInput.value === 'bluetooth') {
+    const first = bluetoothSelect.options[0];
+    if (first) first.text = t(bluetooth.status?.devices.length ? '选择附近设备' : '尚未发现设备');
+  }
   render();
 });
-modeInput.addEventListener('change', () => { render(); save(); });
+modeInput.addEventListener('change', () => { socketState = 'idle'; controller.setTarget(null); render(); save(); });
 $('copy').addEventListener('click', async () => {
   const input = $<HTMLInputElement>('pair-url');
   try { await navigator.clipboard.writeText(input.value); $('copy').textContent = t('已复制'); }
@@ -281,9 +335,13 @@ $('copy').addEventListener('click', async () => {
 });
 deviceSelect.addEventListener('change', () => controller.setTarget(targets.find(target => key(target) === deviceSelect.value) || null));
 form.addEventListener('input', () => { dirty = true; render(); });
-form.addEventListener('submit', event => {
+form.addEventListener('submit', async event => {
   event.preventDefault();
-  try { controller.configure(readSettings()); dirty = false; save(); $('error').hidden = true; render(); }
+  try {
+    const settings = readSettings();
+    if (modeInput.value === 'bluetooth' && bluetooth.active) await bluetooth.configure(settings);
+    controller.configure(settings); dirty = false; save(); $('error').hidden = true; render();
+  }
   catch (error) { showError(error); }
 });
 $('start').addEventListener('click', () => { $('error').hidden = true; void controller.start().catch(showError); });
@@ -299,9 +357,9 @@ if (bridge) {
     setLanguage(language, navigator.language); translateDocument();
     bridge.postMessage('language', { language, locale: getLocale() });
     if (!dirty && !controller.armed) { controller.configure(data.settings); populate(data.settings); }
-    if (!connecting && !['paired', 'waiting_for_peer'].includes(socketState)) {
+    if (!connecting && !bluetooth.active && !['paired', 'waiting_for_peer'].includes(socketState)) {
       serverInput.value = data.server;
-      modeInput.value = data.connectionMode === 'local' ? 'local' : 'remote';
+      modeInput.value = ['local', 'bluetooth'].includes(data.connectionMode) ? data.connectionMode : 'remote';
       nodeInput.value = data.nodePath || '';
     }
     hasSource = data.hasSource;

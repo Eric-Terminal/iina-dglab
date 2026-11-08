@@ -6,6 +6,8 @@ header,.row { display:flex; align-items:center; justify-content:space-between; g
 header { margin-bottom:20px; }
 .header-controls { display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end; }
 .header-controls select { width:auto; display:block; }
+.bluetooth-actions { margin:10px 0; }
+.preview-hint { margin:10px 0 0; font-size:10px; }
 h1 { font-size:25px; letter-spacing:-.6px; margin:3px 0 0; font-weight:650; }
 h2 { font-size:14px; margin:0; font-weight:600; }
 p { color:var(--muted); margin:5px 0 12px; font-size:12px; }

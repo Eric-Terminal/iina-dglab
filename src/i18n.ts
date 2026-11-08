@@ -4,6 +4,37 @@ export type Locale = 'zh-CN' | 'en';
 // 中文原文作为消息键；运行状态也在显示时翻译，切换语言不影响联动状态。
 export const english: Record<string, string> = {
   '郊狼音频联动': 'Coyote Audio Link', '音频联动': 'Audio Link',
+  '蓝牙直连 · 无需 App': 'Direct Bluetooth · No app', '附近的郊狼 3.0': 'Nearby Coyote 3.0 devices',
+  '点击扫描设备': 'Click Scan devices', '重新扫描': 'Scan again', '连接设备': 'Connect device', '扫描设备': 'Scan devices',
+  '选择附近设备': 'Select a nearby device', '尚未发现设备': 'No devices found yet', '等待蓝牙设备连接': 'Waiting for Bluetooth device',
+  '正在扫描': 'Scanning', '请选择设备': 'Select a device', '蓝牙已连接': 'Bluetooth connected', '正在断开': 'Disconnecting', '蓝牙连接异常': 'Bluetooth error',
+  '通过这台 Mac 的蓝牙连接郊狼 3.0，无需官方 App 或中继。': 'Connect Coyote 3.0 through this Mac’s Bluetooth. No official app or relay required.',
+  '请先断开官方 App 对设备的蓝牙连接，并允许蓝牙助手访问蓝牙。连接后需手动开启联动。': 'Disconnect the device from the official app first and allow Bluetooth access for the helper. Enable Audio Link manually after connecting.',
+  '直连设备校准': 'Direct connection calibration', '频率平衡': 'Frequency balance', '脉宽平衡': 'Pulse-width balance',
+  '两通道共用这组校准，默认均为 0。直连会写入插件的通道上限与校准，设备会保存这些值。': 'Both channels use these values, initially 0. Direct connection writes the plugin’s intensity limits and calibration to the device, which stores them.',
+  '直连使用插件设置的通道上限；首次连接保持零输出。': 'Direct connection uses the plugin’s intensity limits. Connecting keeps output at zero.',
+  '电量 {value}%': 'Battery {value}%', '设备当前 {value} / 上限 {limit}': 'Device intensity {value} / limit {limit}',
+  '请在 IINA 插件窗口中启动蓝牙直连。': 'Start direct Bluetooth from the IINA plugin window.',
+  '蓝牙助手已启动': 'The Bluetooth helper is already running', '找不到蓝牙助手，请重新安装插件。': 'The Bluetooth helper is missing. Reinstall the plugin.',
+  '蓝牙助手无法启动，请检查 macOS 的隐私与安全性设置。': 'The Bluetooth helper could not launch. Check macOS Privacy & Security settings.',
+  '蓝牙助手启动超时，请检查 macOS 是否阻止了助手启动。': 'Bluetooth helper startup timed out. Check whether macOS blocked its launch.',
+  '蓝牙助手未能启动本地连接。': 'The Bluetooth helper could not start its local connection.', '蓝牙连接已取消': 'Bluetooth connection cancelled',
+  '蓝牙会话已结束，请重新连接': 'Bluetooth session ended. Reconnect.', '无效的蓝牙请求': 'Invalid Bluetooth request',
+  '蓝牙助手响应超时': 'Bluetooth helper response timed out', '蓝牙助手连接失败': 'Bluetooth helper connection failed',
+  '请在系统设置中允许郊狼蓝牙助手访问蓝牙。': 'Allow Coyote Bluetooth to access Bluetooth in System Settings.',
+  '蓝牙已关闭，请打开这台 Mac 的蓝牙。': 'Bluetooth is off. Turn on Bluetooth on this Mac.',
+  '这台 Mac 无法使用低功耗蓝牙。': 'Bluetooth Low Energy is unavailable on this Mac.',
+  '蓝牙正在重置，请重新连接。': 'Bluetooth is resetting. Reconnect.', '蓝牙尚未就绪，请稍后重试。': 'Bluetooth is not ready. Try again shortly.',
+  '设备已连接，请先断开。': 'A device is already connected. Disconnect it first.', '未找到所选设备，请重新扫描。': 'The selected device was not found. Scan again.',
+  '设备连接失败，请确认设备已开机且未被其他 App 占用。': 'Connection failed. Make sure the device is on and disconnected from other apps.',
+  '连接设备超时，请断开其他 App 后重试。': 'Device connection timed out. Disconnect other apps and try again.',
+  '设备未提供郊狼 3.0 所需的蓝牙服务。': 'The device does not provide the required Coyote 3.0 Bluetooth services.',
+  '无法订阅设备确认通知。': 'Could not subscribe to device acknowledgements.', '设备未确认归零，连接已停止。': 'The device did not confirm zero intensity. Connection stopped.',
+  '设备尚未就绪，请先连接。': 'The device is not ready. Connect it first.', '设备强度确认超时，已停止直连。': 'Device intensity acknowledgement timed out. Direct connection stopped.',
+  '蓝牙写入失败，已停止直连。': 'Bluetooth write failed. Direct connection stopped.', '蓝牙写入超时，已停止直连。': 'Bluetooth write timed out. Direct connection stopped.',
+  '蓝牙写入队列拥塞，已停止直连。': 'The Bluetooth write queue is congested. Direct connection stopped.',
+  '直连参数无效': 'Invalid direct connection settings', '波形数据无效': 'Invalid waveform data', '蓝牙命令参数无效': 'Invalid Bluetooth command parameters',
+  '蓝牙助手正在退出': 'The Bluetooth helper is shutting down',
   '语言': 'Language', '跟随系统': 'System default',
   '未连接': 'Disconnected', '正在连接': 'Connecting', '连接中…': 'Connecting…',
   '等待 App 配对': 'Waiting for app pairing', 'App 已连接': 'App connected', '连接已断开': 'Connection lost',
@@ -56,11 +87,11 @@ export const english: Record<string, string> = {
   '本地中继已失去响应，请重新连接。': 'The local relay stopped responding. Reconnect.', '本地中继已失去响应，请重新连接': 'The local relay stopped responding. Reconnect.',
   '设备已切换，请重新开始联动': 'Device changed. Enable Audio Link again.', '设备已离线': 'Device disconnected',
   '参数已应用，继续联动': 'Settings applied; Audio Link remains enabled',
-  '上次停止操作未获确认，请检查 App 后断开并重新连接。': 'The last stop was not acknowledged. Check the device connection, then disconnect and reconnect.',
-  '请先连接 App 并选择在线的郊狼 3.0。': 'Connect and select an online Coyote 3.0 first.',
-  '请设置至少一个通道的强度上限，并确认 App 已回传非零上限。': 'Set a positive intensity limit for at least one channel and check its connection limits.',
+  '上次停止操作未获确认，请检查设备连接后断开并重新连接。': 'The last stop was not acknowledged. Check the device connection, then disconnect and reconnect.',
+  '请先连接并选择在线的郊狼 3.0。': 'Connect and select an online Coyote 3.0 first.',
+  '请设置至少一个通道的非零强度上限，并检查设备通道状态。': 'Set a positive intensity limit for at least one channel and check its connection limits.',
   '联动已就绪': 'Audio Link is ready', '联动已开启，等待音频': 'Audio Link enabled; waiting for audio',
-  '所选通道不可输出，请检查 App 上限和静音状态': 'Selected channels cannot output. Check intensity limits and mute state.',
+  '所选通道不可输出，请检查上限和静音状态': 'Selected channels cannot output. Check intensity limits and mute state.',
   '通道状态已改变': 'Channel state changed', '正在跟随音频': 'Following audio', '低于噪声门限': 'Below noise gate', '音频统计不可用': 'Audio statistics unavailable',
   '联动已开启，等待音频恢复': 'Audio Link enabled; waiting for fresh audio', '已停止联动': 'Audio Link is off',
   '停止指令未获确认，请检查 App；本次波形与临时强度任务有时限': 'Stop was not acknowledged. Check the connection; waveform and temporary intensity tasks have time limits.',
@@ -92,6 +123,16 @@ export const english: Record<string, string> = {
 };
 
 let locale: Locale = 'zh-CN';
+const bluetoothErrors: Record<string, string> = {
+  'bluetooth-denied': '请在系统设置中允许郊狼蓝牙助手访问蓝牙。', 'bluetooth-off': '蓝牙已关闭，请打开这台 Mac 的蓝牙。',
+  'bluetooth-unsupported': '这台 Mac 无法使用低功耗蓝牙。', 'bluetooth-reset': '蓝牙正在重置，请重新连接。', 'bluetooth-unavailable': '蓝牙尚未就绪，请稍后重试。',
+  'already-connected': '设备已连接，请先断开。', 'device-not-found': '未找到所选设备，请重新扫描。',
+  'device-connect-failed': '设备连接失败，请确认设备已开机且未被其他 App 占用。', 'device-connect-timeout': '连接设备超时，请断开其他 App 后重试。',
+  'device-incompatible': '设备未提供郊狼 3.0 所需的蓝牙服务。', 'device-notify-failed': '无法订阅设备确认通知。', 'device-zero-failed': '设备未确认归零，连接已停止。',
+  'device-not-ready': '设备尚未就绪，请先连接。', 'device-ack-timeout': '设备强度确认超时，已停止直连。',
+  'device-write-failed': '蓝牙写入失败，已停止直连。', 'device-write-timeout': '蓝牙写入超时，已停止直连。', 'device-write-overflow': '蓝牙写入队列拥塞，已停止直连。',
+  'invalid-settings': '直连参数无效', 'invalid-frame': '波形数据无效', 'invalid-command': '蓝牙命令参数无效', 'unknown-method': '无效的蓝牙请求', 'helper-stopping': '蓝牙助手正在退出',
+};
 export function resolveLanguage(value: unknown, systemLocale: string): Locale {
   if (value === 'en' || value === 'zh-CN') return value;
   return systemLocale.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
@@ -109,6 +150,7 @@ const patterns = Object.entries(english).filter(([key]) => key.includes('{')).ma
 });
 
 export function t(message: string): string {
+  message = message.replace(/bluetooth:([a-z-]+)/g, (source, code: string) => bluetoothErrors[code] || source);
   if (locale === 'zh-CN') return message;
   if (english[message]) return english[message];
   if (message.includes('\n')) return message.split('\n').map(t).join('\n');

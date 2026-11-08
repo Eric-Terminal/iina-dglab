@@ -83,9 +83,9 @@ export class AudioController {
       await this.stopping;
       if (generation !== this.generation) return;
       this.busy = false;
-      if (this.stopFailed) throw new Error('上次停止操作未获确认，请检查 App 后断开并重新连接。');
-      if (!this.target || !isConnected(this.target)) throw new Error('请先连接 App 并选择在线的郊狼 3.0。');
-      if (!this.channels().length) throw new Error('请设置至少一个通道的强度上限，并确认 App 已回传非零上限。');
+      if (this.stopFailed) throw new Error('上次停止操作未获确认，请检查设备连接后断开并重新连接。');
+      if (!this.target || !isConnected(this.target)) throw new Error('请先连接并选择在线的郊狼 3.0。');
+      if (!this.channels().length) throw new Error('请设置至少一个通道的非零强度上限，并检查设备通道状态。');
       this.armed = true;
       this.failure = null;
       this.reason = this.isFresh() ? '联动已就绪' : '联动已开启，等待音频';
@@ -129,7 +129,7 @@ export class AudioController {
       return;
     }
     const channels = this.channels();
-    if (!channels.length) { void this.stop('所选通道不可输出，请检查 App 上限和静音状态'); return; }
+    if (!channels.length) { void this.stop('所选通道不可输出，请检查上限和静音状态'); return; }
     // App 的通道上限/静音变化不能让上一批任务继续使用旧通道。
     if ([...this.ownedChannels].some(c => !channels.some(([active]) => c === active))) {
       void this.silence('通道状态已改变', false);

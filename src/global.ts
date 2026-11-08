@@ -1,5 +1,6 @@
 import { DEFAULT_SETTINGS, OFFICIAL_SERVER, STALE_MS, validateSettings, type AudioSample, type Settings } from './shared';
 import { LocalRelay } from './local-relay';
+import { BluetoothHelper } from './bluetooth-helper';
 import { setLanguage, t, type Language } from './i18n';
 
 const { global: hub, standaloneWindow: window, menu, preferences, console: log } = iina;
@@ -19,9 +20,10 @@ try {
 } catch { log.warn('已忽略无效的已保存参数。'); }
 const savedServer = preferences.get('server');
 let server = typeof savedServer === 'string' ? savedServer : OFFICIAL_SERVER;
-let connectionMode = preferences.get('connectionMode') === 'local' ? 'local' : 'remote';
+let connectionMode = ['local', 'bluetooth'].includes(preferences.get('connectionMode')) ? preferences.get('connectionMode') : 'remote';
 let nodePath = String(preferences.get('nodePath') || '');
 const relay = new LocalRelay(iina);
+const bluetooth = new BluetoothHelper(iina);
 let relayGeneration = 0;
 
 window.loadFile('dist/ui.html');
@@ -81,7 +83,7 @@ window.onMessage('save', (data: { settings: unknown; server: string; connectionM
     server = data.server;
     preferences.set('settings', settings);
     preferences.set('server', server);
-    connectionMode = data.connectionMode === 'local' ? 'local' : 'remote';
+    connectionMode = ['local', 'bluetooth'].includes(data.connectionMode) ? data.connectionMode : 'remote';
     nodePath = data.nodePath.trim();
     preferences.set('connectionMode', connectionMode);
     preferences.set('nodePath', nodePath);
@@ -98,9 +100,27 @@ window.onMessage('local-start', async (data: { nodePath: string; scriptPath: str
   }
 });
 window.onMessage('local-stop', () => { relayGeneration++; void relay.stop(); });
+window.onMessage('bluetooth', async (data: { id: number; session: string; method: string; params: Record<string, unknown> }) => {
+  try {
+    let result: unknown;
+    if (data.method === 'start') result = await bluetooth.start(String(data.params.appPath || ''));
+    else if (data.method === 'stop') { await bluetooth.stop(); result = {}; }
+    else result = await bluetooth.request(data.session, data.method, data.params);
+    window.postMessage('bluetooth-result', { id: data.id, result });
+  } catch (error) { window.postMessage('bluetooth-result', { id: data.id, error: error instanceof Error ? error.message : String(error) }); }
+});
+setInterval(() => {
+  if (!windowAPI.isOpen?.()) return;
+  void bluetooth.poll().then(result => { if (result) window.postMessage('bluetooth-status', result); }).catch(error => {
+    window.postMessage('disconnect', { reason: String(error) }); void bluetooth.stop();
+  });
+}, 500);
 setInterval(() => {
   const generation = relayGeneration;
   if (!windowAPI.isOpen?.()) return;
+  void bluetooth.keepAlive().catch(error => {
+    window.postMessage('disconnect', { reason: String(error) }); void bluetooth.stop();
+  });
   void relay.keepAlive().catch(() => {
     if (generation !== relayGeneration) return;
     relayGeneration++;
@@ -117,7 +137,7 @@ setInterval(() => {
     lastSample = undefined;
     const generation = ++relayGeneration;
     // 先给 WebView 清理设备任务的机会；后台停止回调失效时，租约仍会关闭中继。
-    setTimeout(() => { if (generation === relayGeneration) void relay.stop(); }, 1500);
+    setTimeout(() => { if (generation === relayGeneration) { void relay.stop(); void bluetooth.stop(); } }, 1500);
   }
   windowWasOpen = visible;
   if (lastSample && Date.now() - lastSample.at > STALE_MS) {

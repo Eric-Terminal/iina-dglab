@@ -18,12 +18,17 @@
         <summary id="pairing-title">连接地址</summary>
         <div class="pair-grid" id="pair-grid"><canvas id="qr" aria-label="App 配对二维码" hidden></canvas><div><p>DG-LAB 4 → Socket 控制 → 连接服务器</p><p id="pairing-hint">复制下方地址到同一台 Mac 的 App。</p><label for="pair-url">Socket 地址</label><div class="copy-row"><input id="pair-url" readonly><button id="copy">复制</button></div></div></div>
       </details>
-      <label for="connection-mode">连接方式</label><select id="connection-mode"><option value="remote">远程服务器 · 官方或自建</option><option value="local">本机中继 · 同一台 Mac</option></select>
-      <details class="server-details"><summary>连接设置</summary>
+      <label for="connection-mode">连接方式</label><select id="connection-mode"><option value="remote">远程服务器 · 官方或自建</option><option value="bluetooth">蓝牙直连 · 无需 App</option><option value="local">本机中继 · 同一台 Mac</option></select>
+      <div id="bluetooth-controls" hidden>
+        <label for="bluetooth-device">附近的郊狼 3.0</label><select id="bluetooth-device"><option value="">点击扫描设备</option></select>
+        <div class="row bluetooth-actions"><span id="bluetooth-detail" class="muted"></span><div><button id="bluetooth-scan" class="secondary">重新扫描</button> <button id="bluetooth-pair" class="secondary">连接设备</button></div></div>
+        <p>请先断开官方 App 对设备的蓝牙连接，并允许蓝牙助手访问蓝牙。连接后需手动开启联动。</p>
+      </div>
+      <details id="app-settings" class="server-details"><summary>连接设置</summary>
         <div id="local-settings" hidden><p>自动启动本机中继，需要 Node.js 22+。仅接受这台 Mac 的连接。</p><label for="node-path">Node.js 路径（留空自动查找）</label><input id="node-path" placeholder="/opt/homebrew/bin/node" spellcheck="false"></div>
         <div id="remote-settings"><label for="server">V4 WebSocket 地址</label><input id="server" type="url" spellcheck="false" value="wss://trex.dungeon-lab.cn/v4"><p>默认使用官方中继，也可填写自建 V4 服务地址。</p></div>
       </details>
-      <label for="device">输出设备</label><select id="device"><option value="">等待 App 连接</option></select>
+      <div id="app-device"><label for="device">输出设备</label><select id="device"><option value="">等待 App 连接</option></select></div>
     </section>
     <section class="panel monitor">
       <div class="row"><h2>当前音源</h2><span id="signal-state" class="muted">等待音频</span></div>
@@ -62,7 +67,11 @@
         </div>
         <p>编码越小，脉冲越密。ZCR 仅反映声音特征，不识别声音内容。</p>
       </details>
-      <div class="row apply-row"><p>实际通道强度不会超过 App 回传的上限。</p><button type="submit" class="secondary">应用参数</button></div>
+      <details id="bluetooth-calibration" hidden><summary>直连设备校准</summary>
+        <div class="fields channels"><label>频率平衡<input name="frequencyBalance" type="number" min="0" max="255" step="1" required></label><label>脉宽平衡<input name="pulseBalance" type="number" min="0" max="255" step="1" required></label></div>
+        <p>两通道共用这组校准，默认均为 0。直连会写入插件的通道上限与校准，设备会保存这些值。</p>
+      </details>
+      <div class="row apply-row"><p id="limit-hint">实际通道强度不会超过 App 回传的上限。</p><button type="submit" class="secondary">应用参数</button></div>
     </form>
     <footer>
       <p id="status" role="status" aria-live="polite">尚未开始联动</p>

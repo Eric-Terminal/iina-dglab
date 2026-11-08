@@ -1,15 +1,15 @@
 {
   "name": "郊狼音频联动",
   "identifier": "io.github.eric-terminal.iina-dglab",
-  "version": "1.2.0",
-  "description": "将当前播放音频的响度与过零率映射到 DG-LAB 4 的郊狼波形。",
+  "version": "1.3.0",
+  "description": "将当前音频映射为郊狼波形，支持 DG-LAB 4 App 和蓝牙直连。",
   "localized": {
     "en": { "name": "Coyote Audio Link", "description": "Map IINA audio levels and zero-crossing rate to DG-LAB Coyote waveforms." },
     "zh-Hans": { "name": "郊狼音频联动", "description": "将 IINA 音频的响度与过零率映射为郊狼波形。" }
   },
   "author": { "name": "Eric-Terminal", "url": "https://github.com/Eric-Terminal" },
   "ghRepo": "Eric-Terminal/iina-dglab",
-  "ghVersion": 4,
+  "ghVersion": 5,
   "entry": "dist/main.js",
   "globalEntry": "dist/global.js",
   "permissions": ["network-request", "file-system"],

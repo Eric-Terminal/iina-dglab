@@ -10,4 +10,6 @@
 | [dijkstrajs](https://github.com/andrewhayward/dijkstra) | MIT | 二维码编码内部依赖 |
 | [ws 8.22.1](https://github.com/websockets/ws) | MIT | 本机中继的 WebSocket 服务端 |
 
-精确版本和完整性哈希记录在 `package-lock.json`。TypeScript、esbuild、tsx 和类型定义仅用于开发、构建或本地测试，不在插件运行时执行。`ws` 的可选原生扩展未打包，运行时使用纯 JavaScript 实现。
+精确版本和完整性哈希记录在 `package-lock.json`。TypeScript、esbuild、tsx、jsdom 和类型定义仅用于开发、构建或本地测试，不在插件运行时执行。`ws` 的可选原生扩展未打包，运行时使用纯 JavaScript 实现。
+
+`dist/CoyoteBluetooth.app` 由本仓库的 `native/` Swift 源码构建，使用系统提供的 AppKit、CoreBluetooth、Network、Security 与 Swift 运行库，没有另行捆绑第三方蓝牙库。
