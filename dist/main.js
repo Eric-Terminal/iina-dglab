@@ -249,7 +249,7 @@
     "\u5C1A\u672A\u5F00\u59CB\u8054\u52A8": "Audio Link is off",
     "\u5F00\u59CB\u8054\u52A8": "Enable Audio Link",
     "\u505C\u6B62\u8F93\u51FA": "Stop output",
-    "\u53EF\u4EE5\u5148\u5F00\u542F\u8054\u52A8\u518D\u64AD\u653E\u3002\u6682\u505C\u3001\u9759\u97F3\u3001\u4F4E\u4E8E\u95E8\u9650\u6216\u91C7\u6837\u4E2D\u65AD\u65F6\u5F52\u96F6\uFF0C\u97F3\u9891\u6062\u590D\u540E\u81EA\u52A8\u7EE7\u7EED\u3002\u5173\u95ED\u63A7\u5236\u53F0\u3001\u5207\u6362\u5A92\u4F53\u6216\u65AD\u8FDE\u540E\u9700\u91CD\u65B0\u5F00\u542F\u3002": "You can enable Audio Link before playback. Pausing, muting, quiet audio or missing samples stops output; fresh audio resumes it. Re-enable after closing this window, changing media or disconnecting.",
+    "\u53EF\u4EE5\u5148\u5F00\u542F\u8054\u52A8\u518D\u64AD\u653E\u3002\u6682\u505C\u3001\u9759\u97F3\u3001\u4F4E\u4E8E\u95E8\u9650\u3001\u91C7\u6837\u4E2D\u65AD\u6216\u5207\u6362\u5A92\u4F53\u65F6\u5F52\u96F6\uFF0C\u6709\u6548\u97F3\u9891\u6062\u590D\u540E\u81EA\u52A8\u7EE7\u7EED\u3002\u5173\u95ED\u63A7\u5236\u53F0\u3001\u5207\u6362\u64AD\u653E\u7A97\u53E3\u6216\u65AD\u8FDE\u540E\u9700\u91CD\u65B0\u5F00\u542F\u3002": "You can enable Audio Link before playback. Pausing, muting, quiet audio, missing samples or changing media silences output; fresh valid audio resumes it. Re-enable after closing this window, selecting another playback window or disconnecting.",
     "\u6253\u5F00\u97F3\u9891\u8054\u52A8\uFF08\u4F7F\u7528\u5F53\u524D\u7A97\u53E3\uFF09": "Open Audio Link (use this window)",
     "\u6253\u5F00\u97F3\u9891\u8054\u52A8\u63A7\u5236\u53F0": "Open Audio Link controls",
     "\u505C\u6B62\u90CA\u72FC\u8F93\u51FA": "Stop Coyote output",
@@ -309,7 +309,7 @@
     "\u6B63\u5728\u8C03\u6574\u97F3\u9891\u9884\u8BFB\u7F13\u51B2": "Adjusting audio look-ahead buffer",
     "\u97F3\u9891\u9884\u8BFB\u4E0D\u8DB3\uFF0C\u8BF7\u51CF\u5C0F\u63D0\u524D\u91CF\u6216\u7B49\u5F85\u7F13\u51B2": "Insufficient audio look-ahead. Reduce advance or wait for buffering.",
     "\u6B63\u5728\u7B49\u5F85\u97F3\u9891\u7EDF\u8BA1\uFF0C\u8BF7\u4FDD\u6301\u64AD\u653E": "Waiting for audio statistics. Keep playback running.",
-    "\u5A92\u4F53\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8": "Media changed. Enable Audio Link again.",
+    "\u5A92\u4F53\u5DF2\u5207\u6362\uFF0C\u7B49\u5F85\u97F3\u9891": "Media changed; waiting for audio",
     "\u6B63\u5728\u5B9A\u4F4D": "Seeking",
     "\u64AD\u653E\u7A97\u53E3\u5DF2\u5173\u95ED": "Playback window closed",
     "\u65E0\u6CD5\u8BFB\u53D6\u64AD\u653E\u5668\u7684\u97F3\u9891\u7F13\u51B2\u8BBE\u7F6E": "Cannot read the player\u2019s audio buffer setting",
@@ -557,7 +557,9 @@
   });
   event.on("iina.file-loaded", () => {
     if (!capturing) return;
-    hub.postMessage("source-reset", { reason: "\u5A92\u4F53\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8" });
+    hub.postMessage("media-reset", { reason: "\u5A92\u4F53\u5DF2\u5207\u6362\uFF0C\u7B49\u5F85\u97F3\u9891" });
+    lastPosition = -1;
+    lastProgressAt = Date.now();
     seekUntil = Date.now() + 250;
     removeFilter();
     closeStats();
@@ -577,7 +579,7 @@
   event.on("mpv.end-file", () => {
     if (!capturing) return;
     publish("\u64AD\u653E\u5DF2\u7ED3\u675F");
-    hub.postMessage("source-reset", { reason: "\u64AD\u653E\u5DF2\u7ED3\u675F" });
+    hub.postMessage("media-reset", { reason: "\u64AD\u653E\u5DF2\u7ED3\u675F" });
     removeFilter();
     closeStats();
     audioBuffer.restore();

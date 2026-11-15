@@ -169,6 +169,16 @@ export class AudioController {
     else this.changed();
   }
 
+  resetMedia(reason: string): Promise<void> {
+    // 换片只清理旧音频和设备任务，联动开关仍由用户控制。
+    this.sample = null;
+    this.wave = null;
+    this.previewWave = null;
+    this.mapper.reset();
+    this.previewMapper.reset();
+    return this.silence(reason, false);
+  }
+
   stop(reason = '已停止联动'): Promise<void> {
     this.mapper.reset();
     return this.silence(reason, true);

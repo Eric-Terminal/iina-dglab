@@ -17,7 +17,7 @@ Requires Coyote 3.0 and an IINA version with plugins and `standaloneWindow.isOpe
 
 The Language selector supports System default, Simplified Chinese and English. Chinese system locales use Simplified Chinese; all other locales use English. Your selection is saved. Changing language does not reconnect, change settings or alter the enabled state.
 
-**Enable Audio Link is a persistent switch.** You can enable it while playback is paused or audio is unavailable. Pause, mute, silence below the gate and temporary sampling interruptions silence output while keeping it enabled; fresh valid audio resumes output automatically. Applying settings while enabled clears old tasks and continues without another click. Device disconnection, command failure, changing media/source/device and closing the window disable the switch.
+**Enable Audio Link is a persistent switch.** You can enable it while playback is paused or audio is unavailable. Pause, mute, silence below the gate and temporary sampling interruptions silence output while keeping it enabled; fresh valid audio resumes output automatically. Applying settings while enabled clears old tasks and continues without another click. Changing files or advancing the playlist in the same playback window clears old output, samples and preview while keeping the switch enabled; fresh audio from the new media resumes output. Changing media never enables a switch you turned off. Device disconnection, command failure, selecting another playback window, changing devices and closing the playback or control window disable the switch.
 
 Channel intensity and waveform amplitude are separate: app mode uses the lower of your configured intensity limit and the app’s reported limit. Audio controls waveform amplitude from 0 to 100. Waveform amplitude 100 does not mean device intensity 100.
 
@@ -85,7 +85,8 @@ ZCR and loudness do not reliably classify voices, impacts or music. An adaptive 
 | Pause, mute, zero volume, buffering, seeking or closed gate | Silence output; remain enabled and resume on fresh valid audio |
 | Apply settings while enabled | Clear old tasks, preserve the switch, then continue with new settings |
 | No fresh sample for over 350 ms | Discard stale readings, silence and wait; do not replay missed frames |
-| Media end/change, source/device change, disconnection or command failure | Disable Audio Link; manual enabling is required |
+| Media end, file change or playlist advance in the same playback window | Clear old output, samples and preview; remain enabled and resume on fresh valid audio from the new media |
+| Select another playback window, close the playback window, change devices, disconnect or encounter a command failure | Disable Audio Link; manual enabling is required |
 | Stop button or Esc inside the console | Disable Audio Link and stop output |
 | Ctrl+Option+Esc in the playback window | Stop through the plugin menu shortcut |
 | Close console | Stop, disconnect, clean up audio statistics, restore buffering and shut down helpers |

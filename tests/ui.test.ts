@@ -6,9 +6,11 @@ import { JSDOM } from 'jsdom';
 import { DEFAULT_SETTINGS } from '../src/shared';
 import type { BluetoothStatus } from '../src/bluetooth-helper';
 
-test('完整控制台支持英文直连流程、暂停时开启、独立预览与运行中应用参数', async () => {
+test('完整控制台支持英文直连流程、暂停时开启、独立预览、换片续播与运行中应用参数', async () => {
   const dom = new JSDOM(readFileSync('src/ui.html', 'utf8'), { url: 'file:///fixture/dist/ui.html', runScripts: 'outside-only' });
   const { window } = dom;
+  let now = Date.now();
+  window.Date.now = () => now;
   const handlers: Record<string, Function> = {};
   const requests: any[] = [];
   let status: BluetoothStatus = { state: 'idle', devices: [], deviceId: null, battery: null, capA: 0, capB: 0, intensityA: 0, intensityB: 0, error: null };
@@ -44,10 +46,22 @@ test('完整控制台支持英文直连流程、暂停时开启、独立预览�
     $('start').click(); await flush();
     assert.match($('status').textContent!, /waiting for audio/i);
     const reading = { running: true, reason: '', rmsDb: -10, peakDb: -3, zcr: 0.2 };
-    handlers.audio({ at: Date.now(), title: 'Synthetic audio', ...reading, preview: { ...reading, rmsDb: -80, peakDb: -70 } });
+    handlers.audio({ at: now, title: 'Synthetic audio', ...reading, preview: { ...reading, rmsDb: -80, peakDb: -70 } });
     await flush();
     assert.equal($('rms').textContent, '-80.0'); assert.equal($('amplitude').textContent, '0');
     assert.ok(requests.some(request => request.method === 'pulse' && !request.params.frame.endsWith('00000000')), '未来波形输出不应改变当前预览');
+    const pulses = () => requests.filter(request => request.method === 'pulse').length;
+    const beforeMediaChange = pulses();
+    handlers['media-reset']({ reason: '播放已结束' }); await flush();
+    handlers['media-reset']({ reason: '媒体已切换，等待音频' }); await flush();
+    assert.equal($('start').textContent, 'Audio Link enabled');
+    assert.equal($('rms').textContent, '—'); assert.equal($('amplitude').textContent, '0');
+    assert.equal($('status').textContent, 'Media changed; waiting for audio');
+    assert.equal(pulses(), beforeMediaChange);
+    now += 100;
+    handlers.audio({ at: now, title: 'Next media', ...reading, preview: reading }); await flush();
+    assert.equal($('source').textContent, 'Next media');
+    assert.equal(pulses(), beforeMediaChange + 2, '无需再点开始，新媒体应自动输出');
     const beforeLanguage = requests.length;
     const language = $<HTMLSelectElement>('language');
     language.value = 'zh-CN'; language.dispatchEvent(new window.Event('change'));
@@ -59,6 +73,12 @@ test('完整控制台支持英文直连流程、暂停时开启、独立预览�
     assert.ok(requests.some(request => request.method === 'clear'), '应用参数先清理旧任务');
     $('stop').click(); await flush();
     assert.equal($('start').textContent, '开始联动');
+    const afterStop = pulses();
+    handlers['media-reset']({ reason: '媒体已切换，等待音频' });
+    now += 100;
+    handlers.audio({ at: now, title: 'Third media', ...reading, preview: reading }); await flush();
+    assert.equal($('start').textContent, '开始联动');
+    assert.equal(pulses(), afterStop, '手动停止后换片不能自行开启');
     $('connect').click(); await flush();
     assert.equal($<HTMLSelectElement>('connection-mode').disabled, false);
     assert.equal($('connection-state').textContent, '未连接');

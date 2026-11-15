@@ -156,7 +156,9 @@ hub.onMessage('language', (data: { language: string; locale: string }) => { setL
 
 event.on('iina.file-loaded', () => {
   if (!capturing) return;
-  hub.postMessage('source-reset', { reason: '媒体已切换，请重新开始联动' });
+  hub.postMessage('media-reset', { reason: '媒体已切换，等待音频' });
+  lastPosition = -1;
+  lastProgressAt = Date.now();
   seekUntil = Date.now() + 250;
   removeFilter(); closeStats();
   lastFilterAttempt = -Infinity;
@@ -173,7 +175,7 @@ event.on('mpv.playback-restart', () => { seekUntil = Date.now() + 150; });
 event.on('mpv.end-file', () => {
   if (!capturing) return;
   publish('播放已结束');
-  hub.postMessage('source-reset', { reason: '播放已结束' });
+  hub.postMessage('media-reset', { reason: '播放已结束' });
   removeFilter(); closeStats();
   audioBuffer.restore();
 });

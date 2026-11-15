@@ -74,6 +74,11 @@ hub.onMessage('audio', (sample: AudioSample, player?: string) => {
 hub.onMessage('source-reset', (data: { reason: string }, player?: string) => {
   if (player === selectedPlayer) { lastSample = undefined; stop(data.reason); }
 });
+hub.onMessage('media-reset', (data: { reason: string }, player?: string) => {
+  if (player !== selectedPlayer) return;
+  lastSample = undefined;
+  window.postMessage('media-reset', data);
+});
 hub.onMessage('emergency-stop', () => stop('已通过快捷键停止'));
 
 window.onMessage('ready', () => { uiReady = true; initializeUI(); });

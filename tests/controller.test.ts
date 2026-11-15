@@ -74,6 +74,54 @@ test('暂停清队列并归零，恢复仅在仍处于联动状态时输出', as
   await s.controller.stop(); const count = s.calls.length; s.tick();
   assert.equal(s.calls.length, count);
 });
+test('连续换片清空旧采样和映射，清理完成后用新媒体音频自动继续', async () => {
+  const s = setup(); await s.controller.start(); s.tick(); await flush();
+  const releases: (() => void)[] = [];
+  s.transport.clearOperate = () => new Promise<void>(resolve => releases.push(resolve));
+  const ended = s.controller.resetMedia('播放已结束');
+  const loaded = s.controller.resetMedia('媒体已切换，等待音频');
+  assert.equal(s.controller.armed, true);
+  assert.deepEqual([s.controller.sample, s.controller.wave, s.controller.previewWave], [null, null, null]);
+  assert.equal(s.calls.filter(c => c.name === 'resetIntensity').length, 2);
+  s.advance(3000); s.controller.watchdog();
+  s.tick(); await flush();
+  assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 2, '清理未完成时不输出新媒体');
+  releases.forEach(resolve => resolve()); await Promise.all([ended, loaded]);
+  const count = s.calls.length;
+  s.advance(100); s.controller.accept(sample(s.now(), { title: '下一首', rmsDb: -80, peakDb: -70 }));
+  assert.equal(s.calls.length, count, '新媒体的静音段不能沿用上一首的波形');
+  assert.equal(s.controller.previewWave?.intensity, 0);
+  s.tick(); await flush();
+  assert.equal(s.controller.armed, true);
+  assert.equal(s.calls.filter(c => c.name === 'sendPulse').length, 4);
+});
+test('换片不自动开启已关闭的联动，切换过程中手动停止也保持关闭', async () => {
+  const s = setup();
+  await s.controller.resetMedia('媒体已切换，等待音频');
+  s.tick(); await flush();
+  assert.equal(s.controller.armed, false); assert.equal(s.calls.length, 0);
+  await s.controller.start(); s.tick(); await flush();
+  const releases: (() => void)[] = [];
+  s.transport.clearOperate = () => new Promise<void>(resolve => releases.push(resolve));
+  const ended = s.controller.resetMedia('播放已结束');
+  const stopped = s.controller.stop();
+  const loaded = s.controller.resetMedia('媒体已切换，等待音频');
+  releases.forEach(resolve => resolve()); await Promise.all([ended, stopped, loaded]);
+  const count = s.calls.length;
+  s.tick(); await flush();
+  assert.equal(s.controller.armed, false); assert.equal(s.calls.length, count);
+});
+test('换片清理失败仍显示错误并停止，不因新媒体到来而重新开启', async () => {
+  const s = setup(); await s.controller.start(); s.tick(); await flush();
+  s.transport.clearOperate = () => Promise.reject(new Error('清理超时'));
+  await s.controller.resetMedia('播放已结束');
+  assert.equal(s.controller.armed, false);
+  assert.match(s.controller.failure!, /清理超时/);
+  await s.controller.resetMedia('媒体已切换，等待音频');
+  const count = s.calls.length;
+  s.tick(); await flush();
+  assert.equal(s.calls.length, count);
+});
 test('暂停、静音、缓冲和跳转的持续心跳不应误报采样超时', async () => {
   const s = setup(); await s.controller.start(); s.tick(); await flush();
   for (const reason of ['播放已暂停', '播放器已静音', '正在缓冲或定位', '正在定位']) {
