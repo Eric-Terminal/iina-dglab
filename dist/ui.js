@@ -3532,8 +3532,8 @@
       this.now = now;
     }
     setTarget(target) {
-      const same = target && this.target && target.clientId === this.target.clientId && target.device.slotId === this.target.device.slotId;
-      if (!same) void this.stop("\u8BBE\u5907\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8");
+      const same = target === this.target || target && this.target && target.clientId === this.target.clientId && target.device.slotId === this.target.device.slotId;
+      if (!same) void this.stop(target ? "\u8BBE\u5907\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u5F00\u59CB\u8054\u52A8" : "\u8BBE\u5907\u5DF2\u79BB\u7EBF");
       this.target = target;
       if (!same) {
         this.stopFailed = false;

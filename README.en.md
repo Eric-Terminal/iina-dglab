@@ -34,7 +34,7 @@ The package includes a native Swift/CoreBluetooth helper. End users do not need 
 
 The bundled helper is ad-hoc signed, without an Apple Developer ID signature or notarization. macOS may block its first launch after download. After verifying the package source, approve the helper in System Settings → Privacy & Security, or build it from source. The plugin does not disable system security checks.
 
-Protocol, helper process and UI tests pass without hardware. **Physical Bluetooth discovery, handshake, output and stop timing have not yet been verified on a Coyote device.** Remote app mode remains the default.
+Protocol, helper process and UI tests pass without hardware. The user has connected and played through direct Bluetooth, but version 1.3.0 reported intensity acknowledgement timeouts during playback. Version 1.3.1 fixes repeated zeroing, intensity changes caused by missing frames and acknowledgement resynchronization. **Sustained operation after these fixes and physical stop timing still need hardware verification.** Remote app mode remains the default.
 
 ## Waveform advance and preview
 
@@ -94,7 +94,9 @@ App mode sends only the current frame and replaces tasks using V4 `im: true`. Pe
 
 App command acknowledgement timeout is **2 seconds**, independent of task duration. Waiting does not extend or replay the old task. Errors retain the original failure, command and channel. **App connected** means pairing is intact, not that every command has been acknowledged. A failed stop requires disconnection and reconnection. Do not schedule tasks from another controller on the same channels: clearing tasks is scoped to device and channel.
 
-Direct Bluetooth sends one B0 packet containing both channels every 100 ms. Only the latest frame is retained, each frame is consumed once, cached frames expire after 100 ms and temporary intensity expires after 250 ms. Missing valid frames produce zero waveforms. Intensity changes wait for the matching B1 sequence; a 500 ms acknowledgement timeout attempts zeroing and disconnects. Cache expiry is not an exact physical stop timestamp: transfer and device consumption add delay. The 8-second helper lease manages process lifetime, not waveform duration.
+Direct Bluetooth sends one B0 packet containing both channels every 100 ms. Only the latest frame is retained, each frame is consumed once, cached frames expire after 100 ms and temporary intensity expires after 250 ms. A missing frame produces a zero waveform without immediately changing an intensity value that is still valid. Explicit stops, intensity expiry and lower limits still take effect promptly.
+
+Intensity changes wait for B1 acknowledgement. Repeated zeroing preserves the pending sequence; already-confirmed zero intensity does not create another acknowledgement wait. Late notifications matching the current target values also confirm resynchronization. Each attempt waits one second, then resends the current absolute intensity subject to its limits and expiry, up to three sends before attempting zeroing and disconnecting. Retries do not accumulate intensity, replay old waveforms or extend audio/intensity validity. Cache expiry is not an exact physical stop timestamp: transfer and device consumption add delay. The 8-second helper lease only manages process lifetime.
 
 An earlier real-app session stopped despite showing App connected. Its screenshot does not establish the original cause. Version 1.3.0 adds command diagnostics and longer acknowledgement waiting; resolution of that specific issue has not yet been confirmed on hardware.
 
@@ -125,7 +127,7 @@ The mpv tests require local `ffmpeg` and `mpv`, synthesize audio/video and use n
 
 For a local synthetic UI preview, run `npm run build`, then `node node_modules/tsx/dist/cli.mjs scripts/preview.ts`. It uses a virtual app/device, with no physical output. `dist/` is committed so GitHub installation needs no build step. Package source, native source, build scripts and dependency lockfile are included in each release.
 
-Earlier versions were checked by the user with IINA 1.5.1 / mpv 0.41.0 for audio curves, pause state, official relay pairing and device snapshots. Actual advance calibration, revised local-app pairing, direct Bluetooth operation and physical stopping time remain to be verified.
+Earlier versions were checked by the user with IINA 1.5.1 / mpv 0.41.0 for audio curves, pause state, official relay pairing and device snapshots. The user also reported acknowledgement timeouts during direct Bluetooth playback. Version 1.3.1 adds regressions for duplicate zeroing, delayed notifications, missing frames, resynchronization, expiry and a one-minute simulated device run. Sustained Bluetooth operation after the fixes, advance calibration, revised local-app pairing and physical stop timing still need hardware verification. The earlier remote-app stop acknowledgement issue is a separate path and is not claimed to be resolved by this Bluetooth fix.
 
 ## References and license
 

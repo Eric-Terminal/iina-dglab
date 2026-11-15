@@ -51,8 +51,8 @@ export class AudioController {
   }
 
   setTarget(target: Target | null): void {
-    const same = target && this.target && target.clientId === this.target.clientId && target.device.slotId === this.target.device.slotId;
-    if (!same) void this.stop('设备已切换，请重新开始联动');
+    const same = target === this.target || target && this.target && target.clientId === this.target.clientId && target.device.slotId === this.target.device.slotId;
+    if (!same) void this.stop(target ? '设备已切换，请重新开始联动' : '设备已离线');
     this.target = target;
     if (!same) { this.stopFailed = false; this.failure = null; }
     if (target && !isConnected(target)) void this.stop('设备已离线');

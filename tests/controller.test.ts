@@ -33,6 +33,19 @@ test('连接与预览不会输出，必须手动开始；每通道遵守 App 上
     assert.equal((call.args[5] as { immediate: boolean }).immediate, true);
   }
 });
+test('设备掉线不误报切换，重复离线状态不覆盖停止原因', async () => {
+  const s = setup();
+  await s.controller.start(); s.tick(); await flush();
+  s.controller.setTarget(null); await flush();
+  assert.equal(s.controller.armed, false);
+  assert.equal(s.controller.reason, '设备已离线');
+  await s.controller.stop('设备强度确认超时');
+  s.controller.setTarget(null);
+  assert.equal(s.controller.reason, '设备强度确认超时');
+  const count = s.calls.length;
+  s.tick(); await flush();
+  assert.equal(s.calls.length, count);
+});
 test('预览与提前输出使用独立时间线，改变提前量不会重置预览', async () => {
   const s = setup(); await s.controller.start();
   const quiet = { running: true, reason: '', rmsDb: -80, peakDb: -75, zcr: 0.04 };

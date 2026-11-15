@@ -56,9 +56,16 @@ final class CoyoteOutput {
         var frame = CoyoteFrame.zero
         var frameUntil: TimeInterval = 0
     }
+    struct Confirmation {
+        let sequence: UInt8
+        let values: [UInt8]
+        let until: TimeInterval
+        let attempts: Int
+    }
     private(set) var channels = [Channel(), Channel()]
     private(set) var actual: [UInt8] = [0, 0]
-    private(set) var pending: (sequence: UInt8, until: TimeInterval)?
+    private(set) var pending: Confirmation?
+    private var hasStatus = false
     private var sequence: UInt8 = 0
     var limits: [UInt8] = [0, 0]
 
@@ -81,31 +88,51 @@ final class CoyoteOutput {
 
     func acknowledge(_ data: Data) -> Bool {
         guard data.count == 4, data[0] == 0xB1, data[1] <= 15, data[2] <= 200, data[3] <= 200 else { return false }
-        // 旧序号的迟到确认不能覆盖新一轮归零结果；序号 0 是设备拨轮的主动通知。
-        guard data[1] == 0 || data[1] == pending?.sequence else { return false }
-        actual = [data[2], data[3]]
-        if data[1] == pending?.sequence { pending = nil; return true }
+        let values = [data[2], data[3]]
+        // 绝对值重同步后，迟到回包若与当前目标相同，也能证明已同步。
+        // 不匹配的旧强度不能覆盖归零结果；序号 0 仍用于接收设备拨轮状态。
+        let confirmed = pending.map { data[1] == $0.sequence || values == $0.values } ?? false
+        guard data[1] == 0 || confirmed else { return false }
+        actual = values; hasStatus = true
+        if confirmed { pending = nil; return true }
         return false
     }
 
     func packet(now: TimeInterval, forceZero: Bool = false) throws -> Data {
-        if !forceZero, let pending, now > pending.until { throw BridgeFailure.code("device-ack-timeout") }
         var desired: [UInt8] = []
         var frames: [Data] = []
         for (index, channel) in channels.enumerated() {
-            let active = !forceZero && now < channel.frameUntil && now < channel.intensityUntil
-            desired.append(active ? min(channel.intensity, limits[index]) : 0)
-            frames.append(active ? channel.frame : CoyoteFrame.zero)
+            // 通道强度有独立的 250 ms 有效期；缺一帧只清波形，避免两个
+            // 100 ms 定时器的相位差让强度在零与上限之间来回切换。
+            let intensity = !forceZero && now < channel.intensityUntil ? min(channel.intensity, limits[index]) : 0
+            desired.append(intensity)
+            frames.append(intensity > 0 && now < channel.frameUntil ? channel.frame : CoyoteFrame.zero)
             // 定时器有抖动，帧只能消费一次，不能因下一次 tick 提前而重播。
             channels[index].frameUntil = 0
         }
         var control: UInt8 = 0
-        if forceZero || (pending == nil && desired != actual) {
-            sequence = sequence % 15 + 1
-            pending = (sequence, now + 0.5)
-            control = sequence << 4 | 0x0F
+        var change: [UInt8]?
+        var attempts = 1
+        if let pending {
+            let reduced = zip(desired, pending.values).map { min($0.0, $0.1) }
+            if reduced != pending.values {
+                // 停止、到期或降低上限可以立即降强度；其他通道不会趁机升高。
+                change = reduced
+            } else if now >= pending.until {
+                if pending.attempts >= 3 && !forceZero { throw BridgeFailure.code("device-ack-timeout") }
+                // 重发当前绝对目标，不能累计加量，也不能恢复已过期的旧强度或波形。
+                change = desired; attempts = pending.attempts + 1
+            }
+        } else if desired != actual || (forceZero && !hasStatus) {
+            change = desired
         }
-        // 等待 B1 时只更新波形，避免并行改强度；归零指令可以立即覆盖尚未确认的输出。
+        if let change {
+            sequence = sequence % 15 + 1
+            pending = Confirmation(sequence: sequence, values: change, until: now + 1, attempts: attempts)
+            control = sequence << 4 | 0x0F
+            desired = change
+        }
+        // 重复清零不更换待确认序号；常规等待期间仅发送新的波形。
         return Data([0xB0, control, desired[0], desired[1]]) + frames[0] + frames[1]
     }
 }
